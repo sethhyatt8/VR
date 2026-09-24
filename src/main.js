@@ -33,7 +33,7 @@ document.body.appendChild(XRButton.createButton(renderer, {
 }));
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(-0.15, 0.84, -0.35);
+controls.target.set(0.12, 1.02, -0.42);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.49;
 controls.minDistance = 0.45;
@@ -53,6 +53,7 @@ const tmpDir = new THREE.Vector3();
 const selection = { colorId: 'red', shapeId: '2x4' };
 let held = null;
 let heldFrom = null;
+let heldHome = null;
 let assembly = null;
 let ghost = null;
 let hovered = null;
@@ -171,7 +172,7 @@ function placementPoint() {
   for (const hit of hits) {
     const owner = ownerOf(hit.object);
     if (!owner || owner === held || owner.userData.type === 'ghost') continue;
-    if (owner.userData.type === 'ui') return null;
+    if (owner.userData.type === 'ui') continue;
     if (owner.userData.type === 'plate' || owner.userData.type === 'brick') return hit.point.clone();
   }
   const point = new THREE.Vector3();
@@ -301,6 +302,15 @@ function nearbyBrick(controller) {
   return best;
 }
 
+function captureHome(brick) {
+  return {
+    role: brick.userData.role,
+    pedestalId: brick.userData.pedestalId,
+    anchor: brick.userData.anchor ? { ...brick.userData.anchor } : null,
+    rot: brick.userData.rot,
+  };
+}
+
 function grab(brick, holder, whole) {
   const group = whole && brick.userData.role === 'placed' ? connectedBricks(grid, brick) : [brick];
   if (group.length > 1) grabAssembly(group, brick, holder);
@@ -308,11 +318,13 @@ function grab(brick, holder, whole) {
 }
 
 function grabOne(brick, holder) {
+  const home = captureHome(brick);
   if (brick.userData.role === 'placed') release(grid, brick);
-  const fromSupply = brick.userData.role === 'supply';
+  const fromSupply = home.role === 'supply';
   const pedestal = pedestals.find((item) => item.id === brick.userData.pedestalId);
   held = brick;
   heldFrom = holder;
+  heldHome = home;
   assembly = null;
   brick.userData.role = 'held';
   brick.userData.snap = null;
@@ -332,24 +344,21 @@ function grabOne(brick, holder) {
   }
   syncBrickScale(brick);
 
-  if (ghost) scene.remove(ghost);
+  discardGhost();
   ghost = makeGhost(brick);
+  ghost.visible = false;
   syncBrickScale(ghost);
   scene.add(ghost);
 
-  if (fromSupply && pedestal) {
-    pedestal.supply = null;
-    refill(pedestal, true);
-    setStatus(`Picked up ${partLabel(brick.userData.colorId, brick.userData.shapeId)}. Another is on the pedestal.`);
-  } else {
-    setStatus(`Holding ${partLabel(brick.userData.colorId, brick.userData.shapeId)}. Release over the plate to place it.`);
-  }
+  if (fromSupply && pedestal) pedestal.supply = null;
+  setStatus(`Holding ${partLabel(brick.userData.colorId, brick.userData.shapeId)}. Let go to drop it.`);
 }
 
 function grabAssembly(bricks, primary, holder) {
   const origin = primary.userData.anchor;
   const pieces = bricks.map((item) => ({
     brick: item,
+    home: captureHome(item),
     dgx: item.userData.anchor.gx - origin.gx,
     dgz: item.userData.anchor.gz - origin.gz,
     dlayer: item.userData.anchor.layer - origin.layer,
@@ -377,9 +386,10 @@ function grabAssembly(bricks, primary, holder) {
   }
   held = primary;
   heldFrom = holder;
+  heldHome = null;
   assembly = { pieces, carry };
   if (ghost) ghost.visible = false;
-  setStatus(`Holding ${pieces.length} connected bricks. Release over the plate to set them down.`);
+  setStatus(`Holding ${pieces.length} connected bricks. Let go to drop them.`);
 }
 
 function rotateAssembly() {
@@ -426,20 +436,18 @@ function rotateHeld() {
     held.userData.rot = (held.userData.rot + 1) % 4;
     held.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
   }
-  if (hasAim) updateSnapFromPoint(lastAim, !heldFrom);
+  if (hasAim) updateSnapFromPoint(lastAim);
 }
 
 function placeAssembly() {
   const snap = held.userData.snap;
-  if (!snap || !canPlaceAssembly(grid, assembly.pieces, snap)) {
-    setStatus('Still holding the build. Aim it at an open spot on the plate.');
-    return false;
-  }
+  if (!snap || !canPlaceAssembly(grid, assembly.pieces, snap)) return false;
   const { pieces, carry } = assembly;
   const count = pieces.length;
   assembly = null;
   held = null;
   heldFrom = null;
+  heldHome = null;
   for (const piece of pieces) {
     const gx = snap.gx + piece.dgx;
     const gz = snap.gz + piece.dgz;
@@ -460,17 +468,14 @@ function placeAssembly() {
   return true;
 }
 
-function placeHeld() {
-  if (!held) return false;
-  if (assembly) return placeAssembly();
+function placeSingle() {
   const snap = held.userData.snap;
-  if (!snap) {
-    setStatus('Still holding it. Aim over the plate, or just past a brick.');
-    return false;
-  }
+  if (!snap) return false;
   const brick = held;
+  const home = heldHome;
   held = null;
   heldFrom = null;
+  heldHome = null;
   if (ghost) ghost.visible = false;
   gridGroup.attach(brick);
   const pos = brickLocalPosition(brick, snap);
@@ -483,75 +488,129 @@ function placeHeld() {
   occupy(grid, brick, snap.gx, snap.gz, snap.layer);
   setBrickRaycast(brick, true);
   targets.push(brick);
+  if (home?.role === 'supply') {
+    const pedestal = pedestals.find((item) => item.id === home.pedestalId);
+    if (pedestal && !pedestal.supply) refill(pedestal, true);
+  }
   setStatus(`Placed ${partLabel(brick.userData.colorId, brick.userData.shapeId)}.`);
   return true;
 }
 
-function updateSnapFromPoint(point, moveDesktopBrick) {
+function restoreBrick(brick, home) {
+  brick.userData.rot = home.rot;
+  brick.userData.snap = null;
+  if (home.role === 'supply') {
+    const pedestal = pedestals.find((item) => item.id === home.pedestalId);
+    if (pedestal) {
+      pedestal.group.attach(brick);
+      brick.position.set(0, 0.712, 0);
+      brick.rotation.set(0, 0, 0);
+      brick.userData.role = 'supply';
+      brick.userData.pedestalId = home.pedestalId;
+      pedestal.supply = brick;
+      syncBrickScale(brick);
+    }
+  } else if (home.role === 'placed' && home.anchor) {
+    brick.userData.rot = home.rot;
+    gridGroup.attach(brick);
+    const pos = brickLocalPosition(brick, { ...home.anchor, dist: 0 });
+    brick.position.set(pos.x, pos.y, pos.z);
+    brick.rotation.set(0, home.rot * Math.PI / 2, 0);
+    brick.scale.setScalar(1);
+    brick.userData.role = 'placed';
+    occupy(grid, brick, home.anchor.gx, home.anchor.gz, home.anchor.layer);
+  }
+  setBrickRaycast(brick, true);
+  if (!targets.includes(brick)) targets.push(brick);
+}
+
+function restoreHeld() {
+  if (assembly) {
+    const { pieces, carry } = assembly;
+    assembly = null;
+    held = null;
+    heldFrom = null;
+    heldHome = null;
+    for (const piece of pieces) restoreBrick(piece.brick, piece.home);
+    carry.parent?.remove(carry);
+    setStatus('Dropped it back where it was.');
+    return;
+  }
+  if (held && heldHome) {
+    const brick = held;
+    const home = heldHome;
+    held = null;
+    heldFrom = null;
+    heldHome = null;
+    restoreBrick(brick, home);
+    setStatus('Dropped it back where it was.');
+  }
+  held = null;
+  heldFrom = null;
+  heldHome = null;
+}
+
+function releaseHeld() {
+  if (!held) return;
+  const placed = assembly ? placeAssembly() : placeSingle();
+  if (!placed) restoreHeld();
+  discardGhost();
+}
+
+function discardGhost() {
+  if (!ghost) return;
+  ghost.parent?.remove(ghost);
+  ghost = null;
+}
+
+function followAim(point) {
+  const target = assembly ? assembly.carry : held;
+  scene.attach(target);
+  target.position.copy(point);
+  target.position.y += 0.04;
+  if (assembly) {
+    target.rotation.set(0, 0, 0);
+    target.scale.setScalar(pegScale);
+    return;
+  }
+  target.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
+  syncBrickScale(held);
+}
+
+function showGhost(snap) {
+  if (!ghost || assembly) return;
+  if (!snap) {
+    ghost.visible = false;
+    return;
+  }
+  const pos = brickLocalPosition(held, snap);
+  gridGroup.attach(ghost);
+  ghost.position.set(pos.x, pos.y, pos.z);
+  ghost.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
+  syncBrickScale(ghost);
+  ghost.visible = true;
+}
+
+function updateSnapFromPoint(point) {
   if (!held) return;
   lastAim.copy(point);
   hasAim = true;
+  if (!heldFrom) followAim(point);
   localPoint.copy(point);
   gridGroup.worldToLocal(localPoint);
-  const margin = STUD * 4;
+  const margin = STUD * 8;
   const nearBuild = localPoint.x > -margin && localPoint.z > -margin
     && localPoint.x < GRID_X * STUD + margin && localPoint.z < GRID_Z * STUD + margin;
   if (assembly) {
-    const snap = nearBuild
+    held.userData.snap = nearBuild
       ? findAssemblySnap(grid, assembly.pieces, held, localPoint.x, localPoint.y, localPoint.z)
       : null;
-    held.userData.snap = snap;
-    if (!snap) {
-      if (moveDesktopBrick) {
-        scene.attach(assembly.carry);
-        assembly.carry.position.copy(point);
-        assembly.carry.position.y = Math.max(point.y, world.tableTop);
-        assembly.carry.rotation.set(0, 0, 0);
-        assembly.carry.scale.setScalar(pegScale);
-      } else if (heldFrom && assembly.carry.parent !== heldFrom) {
-        heldFrom.attach(assembly.carry);
-        assembly.carry.position.set(0, -0.04, -0.28);
-        assembly.carry.rotation.set(0, 0, 0);
-        assembly.carry.scale.setScalar(pegScale);
-      }
-      return;
-    }
-    gridGroup.attach(assembly.carry);
-    assembly.carry.position.set(snap.gx * STUD, snap.layer * HEIGHT, snap.gz * STUD);
-    assembly.carry.rotation.set(0, 0, 0);
-    assembly.carry.scale.setScalar(1);
     return;
   }
   if (heldFrom) held.userData.rot = quarterTurns(held);
   const snap = nearBuild ? findSnap(grid, held, localPoint.x, localPoint.y, localPoint.z) : null;
   held.userData.snap = snap;
-  if (!snap) {
-    if (ghost) ghost.visible = false;
-    if (moveDesktopBrick) {
-      scene.attach(held);
-      held.position.copy(point);
-      held.position.y = Math.max(point.y + HEIGHT * pegScale, world.tableTop);
-      held.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
-      syncBrickScale(held);
-    }
-    return;
-  }
-  const pos = brickLocalPosition(held, snap);
-  if (moveDesktopBrick) {
-    gridGroup.attach(held);
-    held.position.set(pos.x, pos.y, pos.z);
-    held.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
-    syncBrickScale(held);
-    if (ghost) ghost.visible = false;
-    return;
-  }
-  if (ghost) {
-    gridGroup.attach(ghost);
-    ghost.position.set(pos.x, pos.y, pos.z);
-    ghost.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
-    syncBrickScale(ghost);
-    ghost.visible = true;
-  }
+  showGhost(snap);
 }
 
 function inBuild(object) {
@@ -626,7 +685,7 @@ function onPointerMove(event) {
   if (held && !heldFrom) {
     raycaster.setFromCamera(pointer, camera);
     const aim = placementPoint();
-    if (aim) updateSnapFromPoint(aim, true);
+    if (aim) updateSnapFromPoint(aim);
   }
 }
 
@@ -653,7 +712,7 @@ function onPointerDown(event) {
     press.grabbedNow = true;
     raycaster.setFromCamera(pointer, camera);
     const aim = placementPoint();
-    if (aim) updateSnapFromPoint(aim, true);
+    if (aim) updateSnapFromPoint(aim);
   }
   const interactive = owner && (owner.userData.type === 'ui' || owner.userData.type === 'brick' || held);
   if (interactive || held) controls.enabled = false;
@@ -672,19 +731,21 @@ function onPointerUp(event) {
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
   const clicked = moved < 8;
-  const { owner, grabbedNow } = press;
+  const { owner } = press;
   press = null;
   controls.enabled = true;
-  if (owner?.userData.type === 'ui' && clicked) {
+  if (owner?.userData.type === 'ui' && clicked && !held) {
     activateUi(owner);
     return;
   }
-  if (!held || heldFrom) return;
-  if (grabbedNow && clicked) return;
+  if (!held || heldFrom) {
+    if (owner?.userData.type === 'ui' && clicked) activateUi(owner);
+    return;
+  }
   raycaster.setFromCamera(pointer, camera);
   const aim = placementPoint();
-  if (aim) updateSnapFromPoint(aim, true);
-  placeHeld();
+  if (aim) updateSnapFromPoint(aim);
+  releaseHeld();
 }
 
 function onKeyDown(event) {
@@ -719,12 +780,12 @@ function onXrRelease(controller) {
   tmpDir.set(0, 0, -1).applyQuaternion(controller.quaternion);
   raycaster.set(worldPoint, tmpDir);
   const aim = placementPoint();
-  if (aim) updateSnapFromPoint(aim, false);
+  if (aim) updateSnapFromPoint(aim);
   else {
     held.getWorldPosition(worldPoint);
-    updateSnapFromPoint(worldPoint, false);
+    updateSnapFromPoint(worldPoint);
   }
-  placeHeld();
+  releaseHeld();
 }
 
 function pollRotate(controller) {
@@ -745,10 +806,10 @@ function updateHeldXr() {
   tmpDir.set(0, 0, -1).applyQuaternion(heldFrom.quaternion);
   raycaster.set(worldPoint, tmpDir);
   const aim = placementPoint();
-  if (aim) updateSnapFromPoint(aim, false);
+  if (aim) updateSnapFromPoint(aim);
   else {
     held.getWorldPosition(worldPoint);
-    updateSnapFromPoint(worldPoint, false);
+    updateSnapFromPoint(worldPoint);
   }
 }
 

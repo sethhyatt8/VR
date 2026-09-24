@@ -138,8 +138,8 @@ export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ) 
   for (const layer of [layer0, layer0 + 1, layer0 - 1]) {
     let best = null;
     let bestDist = Infinity;
-    for (let dx = -2; dx <= 2; dx += 1) {
-      for (let dz = -2; dz <= 2; dz += 1) {
+    for (let dx = -5; dx <= 5; dx += 1) {
+      for (let dz = -5; dz <= 5; dz += 1) {
         const snap = { gx: gx0 + dx, gz: gz0 + dz, layer };
         if (!canPlaceAssembly(grid, pieces, snap)) continue;
         const cx = (snap.gx + w / 2) * STUD;
@@ -151,7 +151,7 @@ export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ) 
         }
       }
     }
-    if (best && best.dist <= (STUD * 2.6) ** 2) return best;
+    if (best && best.dist <= (STUD * 5) ** 2) return best;
   }
   return null;
 }
@@ -159,8 +159,8 @@ export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ) 
 function searchLayer(grid, gx0, gz0, w, d, layer, localX, localZ) {
   let best = null;
   let bestDist = Infinity;
-  for (let dx = -2; dx <= 2; dx += 1) {
-    for (let dz = -2; dz <= 2; dz += 1) {
+  for (let dx = -5; dx <= 5; dx += 1) {
+    for (let dz = -5; dz <= 5; dz += 1) {
       const gx = gx0 + dx;
       const gz = gz0 + dz;
       if (!canPlace(grid, gx, gz, w, d, layer)) continue;
@@ -173,7 +173,7 @@ function searchLayer(grid, gx0, gz0, w, d, layer, localX, localZ) {
       }
     }
   }
-  if (!best || best.dist > (STUD * 2.6) ** 2) return null;
+  if (!best || best.dist > (STUD * 5) ** 2) return null;
   return best;
 }
 

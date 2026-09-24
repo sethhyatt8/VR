@@ -4,11 +4,11 @@ import { COLORS, GRID_X, GRID_Z, SHAPES, STUD } from './config.js';
 const TABLE_TOP = 0.76;
 
 export function pedestalSlot(index) {
-  const col = index % 4;
-  const row = Math.floor(index / 4);
+  const col = index % 2;
+  const row = Math.floor(index / 2);
   return {
-    x: -0.05 + col * 0.34,
-    z: 0.62 + row * 0.4,
+    x: 0.88 + col * 0.34,
+    z: 0.22 - row * 0.38,
   };
 }
 
@@ -87,7 +87,7 @@ export function createWorld() {
   scene.fog = new THREE.Fog(0xe7e1d6, 7, 13);
 
   const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 40);
-  camera.position.set(0.15, 1.55, 1.05);
+  camera.position.set(-0.05, 1.58, 1.22);
 
   const targets = [];
 
@@ -203,22 +203,30 @@ export function createWorld() {
 }
 
 function createMachine(targets) {
+  const mount = new THREE.Group();
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x3e4752, roughness: 0.45, metalness: 0.22 });
+  const backZ = -0.55 - (GRID_Z * STUD) / 2 - 0.06;
+  for (const x of [-0.46, 0.46]) {
+    addBox(mount, [0.028, 0.78, 0.028], [x, TABLE_TOP + 0.39, backZ], postMat);
+  }
+  addBox(mount, [0.98, 0.028, 0.028], [0, TABLE_TOP + 0.78, backZ], postMat);
+
   const group = new THREE.Group();
-  group.position.set(-0.78, 0, 0.32);
-  group.rotation.y = Math.atan2(0.9, 0.45);
+  group.position.set(0, 1.28, -0.68);
+  group.rotation.x = -0.58;
+  mount.add(group);
 
   const caseMat = new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 0.55, metalness: 0.18 });
   const trimMat = new THREE.MeshStandardMaterial({ color: 0x3e4752, roughness: 0.45, metalness: 0.22 });
-  addBox(group, [0.52, 0.78, 0.36], [0, 0.39, 0], caseMat);
-  addBox(group, [0.56, 0.04, 0.4], [0, 0.02, 0], trimMat);
-  addBox(group, [0.48, 0.78, 0.03], [0, 0.98, 0.17], trimMat);
+  addBox(group, [0.96, 0.82, 0.02], [0, 0, 0], caseMat);
+  addBox(group, [1.0, 0.02, 0.028], [0, 0.4, 0], trimMat);
 
   const screen = canvasTexture(512, 256, () => {});
   const screenMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.4, 0.16),
+    new THREE.PlaneGeometry(0.82, 0.2),
     new THREE.MeshBasicMaterial({ map: screen.texture }),
   );
-  screenMesh.position.set(0, 1.22, 0.205);
+  screenMesh.position.set(0, 0.24, 0.016);
   group.add(screenMesh);
 
   const colorButtons = COLORS.map((color, index) => {
@@ -233,7 +241,7 @@ function createMachine(targets) {
         emissiveIntensity: 0.18,
       }),
     );
-    mesh.position.set(-0.135 + col * 0.09, 1.02 - row * 0.09, 0.21);
+    mesh.position.set(-0.27 + col * 0.18, 0.06 - row * 0.1, 0.02);
     mesh.userData = { type: 'ui', action: 'color', value: color.id };
     mesh.castShadow = true;
     group.add(mesh);
@@ -251,7 +259,7 @@ function createMachine(targets) {
         emissiveIntensity: 0,
       }),
     );
-    mesh.position.set(-0.145 + index * 0.096, 0.78, 0.21);
+    mesh.position.set(-0.3 + index * 0.2, -0.18, 0.02);
     mesh.userData = { type: 'ui', action: 'shape', value: shape.id };
     mesh.castShadow = true;
     group.add(mesh);
@@ -268,7 +276,7 @@ function createMachine(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  orderButton.position.set(0, 0.66, 0.215);
+  orderButton.position.set(-0.2, -0.3, 0.022);
   orderButton.userData = { type: 'ui', action: 'order' };
   orderButton.castShadow = true;
   group.add(orderButton);
@@ -278,7 +286,7 @@ function createMachine(targets) {
     new THREE.BoxGeometry(0.36, 0.07, 0.02),
     new THREE.MeshStandardMaterial({ color: 0x1c242c, roughness: 0.55 }),
   );
-  pegTrack.position.set(0, 0.5, 0.21);
+  pegTrack.position.set(0.22, -0.3, 0.02);
   pegTrack.userData = { type: 'ui', action: 'peg' };
   group.add(pegTrack);
   targets.push(pegTrack);
@@ -300,7 +308,7 @@ function createMachine(targets) {
     new THREE.PlaneGeometry(0.16, 0.04),
     new THREE.MeshBasicMaterial({ map: pegLabel, transparent: true }),
   );
-  pegTag.position.set(0, 0.055, 0.012);
+  pegTag.position.set(0, 0, 0.02);
   pegTrack.add(pegTag);
 
   function setPegKnob(scale, min, max) {
@@ -337,7 +345,7 @@ function createMachine(targets) {
     }
   }
 
-  return { group, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob };
+  return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob };
 }
 
 export function createPedestal(index, label) {
