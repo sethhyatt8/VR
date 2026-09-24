@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Brick Room</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: #1c1915;
+        font-family: "Segoe UI", system-ui, sans-serif;
+      }
+      canvas {
+        display: block;
+      }
+      #hud {
+        position: fixed;
+        left: 16px;
+        bottom: 16px;
+        max-width: min(440px, calc(100vw - 32px));
+        color: #f7f2ea;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.65);
+        pointer-events: none;
+      }
+      #status {
+        font-size: 16px;
+        font-weight: 650;
+      }
+      #hint {
+        margin-top: 6px;
+        font-size: 13px;
+        opacity: 0.86;
+      }
+      #scale-panel {
+        position: fixed;
+        top: 16px;
+        left: 16px;
+        width: min(280px, calc(100vw - 32px));
+        padding: 10px 12px 12px;
+        border-radius: 10px;
+        background: rgba(22, 24, 28, 0.82);
+        color: #f7f2ea;
+        font-size: 14px;
+      }
+      #scale-panel label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 6px;
+        font-weight: 650;
+      }
+      #peg-size {
+        width: 100%;
+        accent-color: #1f7a45;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="scale-panel">
+      <label for="peg-size">Peg size <span id="peg-readout">6.0 cm</span></label>
+      <input id="peg-size" type="range" min="0.55" max="2" step="0.01" value="1" />
+    </div>
+    <div id="hud">
+      <div id="status">Pick a color and a shape, then press ORDER.</div>
+      <div id="hint">Drag to look around. Click a brick to pick it up, then click where it should sit. Bricks can stagger and hang past an edge. R rotates. Enter orders the selected part.</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

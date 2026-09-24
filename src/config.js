@@ -1,0 +1,39 @@
+export const STUD = 0.06;
+export const HEIGHT = 0.072;
+export const STUD_H = 0.012;
+export const PEG_MIN = 0.55;
+export const PEG_MAX = 2;
+export const GRID_X = 16;
+export const GRID_Z = 12;
+export const MAX_LAYER = 20;
+export const MAX_PEDESTALS = 8;
+
+export const COLORS = [
+  { id: 'red', name: 'Red', hex: 0xd12c2c },
+  { id: 'blue', name: 'Blue', hex: 0x2b6cb0 },
+  { id: 'yellow', name: 'Yellow', hex: 0xf1c40f },
+  { id: 'green', name: 'Green', hex: 0x239b56 },
+  { id: 'white', name: 'White', hex: 0xf4f7f8 },
+  { id: 'black', name: 'Black', hex: 0x222326 },
+  { id: 'orange', name: 'Orange', hex: 0xe67e22 },
+  { id: 'tan', name: 'Tan', hex: 0xd4a574 },
+];
+
+export const SHAPES = [
+  { id: '1x1', name: '1×1', w: 1, d: 1 },
+  { id: '1x2', name: '1×2', w: 1, d: 2 },
+  { id: '2x2', name: '2×2', w: 2, d: 2 },
+  { id: '2x4', name: '2×4', w: 2, d: 4 },
+];
+
+export function colorById(id) {
+  return COLORS.find((color) => color.id === id);
+}
+
+export function shapeById(id) {
+  return SHAPES.find((shape) => shape.id === id);
+}
+
+export function partLabel(colorId, shapeId) {
+  return `${colorById(colorId).name} ${shapeById(shapeId).name}`;
+}
