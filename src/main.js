@@ -187,13 +187,27 @@ function playDispense() {
 function playSnap() {
   const ctx = audio();
   const t = ctx.currentTime;
+  const noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.03), ctx.sampleRate);
+  const data = noise.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+  const burst = ctx.createBufferSource();
+  burst.buffer = noise;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = 900;
+  const noiseGain = envGain(ctx, t, 0.42, 0.001, 0.028);
+  burst.connect(filter);
+  filter.connect(noiseGain);
+  burst.start(t);
+  burst.stop(t + 0.035);
+
   const click = ctx.createOscillator();
   click.type = 'triangle';
-  click.frequency.setValueAtTime(1800, t);
-  click.frequency.exponentialRampToValueAtTime(640, t + 0.035);
-  click.connect(envGain(ctx, t, 0.045, 0.004, 0.04));
+  click.frequency.setValueAtTime(2200, t);
+  click.frequency.exponentialRampToValueAtTime(420, t + 0.04);
+  click.connect(envGain(ctx, t, 0.28, 0.001, 0.05));
   click.start(t);
-  click.stop(t + 0.05);
+  click.stop(t + 0.06);
 }
 
 function paintSelection(detail) {

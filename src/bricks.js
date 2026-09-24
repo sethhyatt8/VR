@@ -1,9 +1,11 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { HEIGHT, STUD, STUD_H } from './config.js';
 
 const GAP = 0.0016;
-const studGeometry = new THREE.CylinderGeometry(STUD * 0.29, STUD * 0.29, STUD_H, 16);
+const STUD_RISE = STUD_H * 0.9;
+const HOLE_R = STUD * 0.34;
+const studGeometry = new THREE.CylinderGeometry(STUD * 0.29, STUD * 0.29, STUD_RISE, 16);
 const materials = new Map();
 
 function materialFor(hex) {
@@ -21,13 +23,56 @@ function materialFor(hex) {
 
 const bodyGeometry = new Map();
 
+function roundedRect(shape, x, y, w, h, r) {
+  shape.moveTo(x + r, y);
+  shape.lineTo(x + w - r, y);
+  shape.absarc(x + w - r, y + r, r, -Math.PI / 2, 0, false);
+  shape.lineTo(x + w, y + h - r);
+  shape.absarc(x + w - r, y + h - r, r, 0, Math.PI / 2, false);
+  shape.lineTo(x + r, y + h);
+  shape.absarc(x + r, y + h - r, r, Math.PI / 2, Math.PI, false);
+  shape.lineTo(x, y + r);
+  shape.absarc(x + r, y + r, r, Math.PI, Math.PI * 1.5, false);
+}
+
+function extrudeUp(shape, height) {
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: false, steps: 1 });
+  geometry.rotateX(-Math.PI / 2);
+  return geometry;
+}
+
 function geometryFor(w, d) {
   const key = `box${w}x${d}`;
   let geometry = bodyGeometry.get(key);
-  if (!geometry) {
-    geometry = new RoundedBoxGeometry(w * STUD - GAP, HEIGHT - STUD_H, d * STUD - GAP, 2, 0.0035);
-    bodyGeometry.set(key, geometry);
+  if (geometry) return geometry;
+
+  const width = w * STUD - GAP;
+  const depth = d * STUD - GAP;
+  const outline = new THREE.Shape();
+  roundedRect(outline, -width / 2, -depth / 2, width, depth, 0.003);
+  for (let x = 0; x < w; x += 1) {
+    for (let z = 0; z < d; z += 1) {
+      const hole = new THREE.Path();
+      hole.absarc(
+        (x - (w - 1) / 2) * STUD,
+        -((z - (d - 1) / 2) * STUD),
+        HOLE_R,
+        0,
+        Math.PI * 2,
+        true,
+      );
+      outline.holes.push(hole);
+    }
   }
+
+  const capOutline = new THREE.Shape();
+  roundedRect(capOutline, -width / 2, -depth / 2, width, depth, 0.003);
+  const socket = extrudeUp(outline, STUD_H);
+  const cap = extrudeUp(capOutline, HEIGHT - STUD_H + 0.0004);
+  cap.translate(0, STUD_H - 0.0004, 0);
+  geometry = mergeGeometries([socket, cap]);
+  geometry.computeVertexNormals();
+  bodyGeometry.set(key, geometry);
   return geometry;
 }
 
@@ -47,15 +92,24 @@ function extrudedProfile(key, width, build) {
 function slopeGeometry(w, d) {
   const width = w * STUD - GAP;
   const depth = d * STUD - GAP;
-  const hy = HEIGHT - STUD_H;
   const z0 = -depth / 2;
   const z1 = depth / 2;
-  const knee = Math.max(z0 + 0.004, z1 - hy);
+  const knee = Math.max(z0 + 0.004, z1 - HEIGHT);
+  const lip = 0.0035;
+  const span = Math.max(knee - z0, 0.001);
+  const zA = z0 + ((STUD_H + 0.003) / HEIGHT) * span;
+  const zB = z1 - lip;
   return extrudedProfile(`slope${w}x${d}`, width, (shape) => {
     shape.moveTo(z0, 0);
+    if (zB > zA + 0.004) {
+      shape.lineTo(zA, 0);
+      shape.lineTo(zA, STUD_H);
+      shape.lineTo(zB, STUD_H);
+      shape.lineTo(zB, 0);
+    }
     shape.lineTo(z1, 0);
-    shape.lineTo(z1, hy);
-    shape.lineTo(knee, hy);
+    shape.lineTo(z1, HEIGHT);
+    shape.lineTo(knee, HEIGHT);
     shape.lineTo(z0, 0);
   });
 }
@@ -63,15 +117,23 @@ function slopeGeometry(w, d) {
 function wallGeometry(w, d) {
   const width = w * STUD - GAP;
   const depth = d * STUD - GAP;
-  const hy = HEIGHT - STUD_H;
   const z0 = -depth / 2;
   const z1 = depth / 2;
-  const knee = Math.max(z0 + 0.004, z1 - hy);
+  const knee = Math.max(z0 + 0.004, z1 - HEIGHT);
+  const lip = 0.0035;
+  const notch0 = z0 + lip;
+  const notch1 = knee - lip;
   return extrudedProfile(`wall${w}x${d}`, width, (shape) => {
     shape.moveTo(z0, 0);
+    if (notch1 > notch0 + 0.004) {
+      shape.lineTo(notch0, 0);
+      shape.lineTo(notch0, STUD_H);
+      shape.lineTo(notch1, STUD_H);
+      shape.lineTo(notch1, 0);
+    }
     shape.lineTo(knee, 0);
-    shape.lineTo(z1, hy);
-    shape.lineTo(z0, hy);
+    shape.lineTo(z1, HEIGHT);
+    shape.lineTo(z0, HEIGHT);
     shape.closePath();
   });
 }
@@ -82,7 +144,6 @@ export function createBrick(shape, color) {
   const kind = shape.kind || 'box';
   const bodyGeo = kind === 'slope' ? slopeGeometry(shape.w, shape.d) : kind === 'wall' ? wallGeometry(shape.w, shape.d) : geometryFor(shape.w, shape.d);
   const body = new THREE.Mesh(bodyGeo, material);
-  if (kind === 'box') body.position.y = (HEIGHT - STUD_H) / 2;
   body.castShadow = true;
   body.receiveShadow = true;
   group.add(body);
@@ -93,7 +154,7 @@ export function createBrick(shape, color) {
       const stud = new THREE.Mesh(studGeometry, material);
       stud.position.set(
         (x - (shape.w - 1) / 2) * STUD,
-        HEIGHT - STUD_H / 2,
+        HEIGHT + STUD_RISE / 2,
         (z - (shape.d - 1) / 2) * STUD,
       );
       stud.castShadow = true;
