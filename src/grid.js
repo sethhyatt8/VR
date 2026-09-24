@@ -55,6 +55,107 @@ export function release(grid, brick) {
   brick.userData.anchor = null;
 }
 
+export function connectedBricks(grid, start) {
+  const found = [];
+  const seen = new Set();
+  const stack = [start];
+  while (stack.length) {
+    const brick = stack.pop();
+    if (!brick || seen.has(brick) || brick.userData.role !== 'placed') continue;
+    seen.add(brick);
+    found.push(brick);
+    for (const key of brick.userData.cells || []) {
+      const [x, z, layer] = key.split(',').map(Number);
+      const around = [
+        [x + 1, z, layer],
+        [x - 1, z, layer],
+        [x, z + 1, layer],
+        [x, z - 1, layer],
+        [x, z, layer + 1],
+        [x, z, layer - 1],
+      ];
+      for (const [nx, nz, nl] of around) {
+        const other = grid.get(cellKey(nx, nz, nl));
+        if (other && !seen.has(other)) stack.push(other);
+      }
+    }
+  }
+  return found;
+}
+
+function assemblyCells(pieces, snap) {
+  const cells = [];
+  for (const piece of pieces) {
+    const { w, d } = footprintOf(piece.brick);
+    for (let x = 0; x < w; x += 1) {
+      for (let z = 0; z < d; z += 1) {
+        cells.push({
+          x: snap.gx + piece.dgx + x,
+          z: snap.gz + piece.dgz + z,
+          layer: snap.layer + piece.dlayer,
+          brick: piece.brick,
+        });
+      }
+    }
+  }
+  return cells;
+}
+
+export function canPlaceAssembly(grid, pieces, snap) {
+  const cells = assemblyCells(pieces, snap);
+  const occupied = new Set();
+  for (const cell of cells) {
+    if (cell.layer < 0 || cell.layer > MAX_LAYER) return false;
+    const key = cellKey(cell.x, cell.z, cell.layer);
+    if (occupied.has(key) || grid.has(key)) return false;
+    occupied.add(key);
+  }
+  for (const piece of pieces) {
+    const { w, d } = footprintOf(piece.brick);
+    const layer = snap.layer + piece.dlayer;
+    let supported = 0;
+    for (let x = 0; x < w; x += 1) {
+      for (let z = 0; z < d; z += 1) {
+        const cx = snap.gx + piece.dgx + x;
+        const cz = snap.gz + piece.dgz + z;
+        if (layer === 0) {
+          if (onPlate(cx, cz)) supported += 1;
+        } else if (grid.has(cellKey(cx, cz, layer - 1)) || occupied.has(cellKey(cx, cz, layer - 1))) {
+          supported += 1;
+        }
+      }
+    }
+    if (supported === 0) return false;
+  }
+  return true;
+}
+
+export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ) {
+  const { w, d } = footprintOf(primary);
+  const gx0 = Math.round(localX / STUD - w / 2);
+  const gz0 = Math.round(localZ / STUD - d / 2);
+  const layer0 = Math.round(localY / HEIGHT);
+  for (const layer of [layer0, layer0 + 1, layer0 - 1]) {
+    let best = null;
+    let bestDist = Infinity;
+    for (let dx = -2; dx <= 2; dx += 1) {
+      for (let dz = -2; dz <= 2; dz += 1) {
+        const snap = { gx: gx0 + dx, gz: gz0 + dz, layer };
+        if (!canPlaceAssembly(grid, pieces, snap)) continue;
+        const cx = (snap.gx + w / 2) * STUD;
+        const cz = (snap.gz + d / 2) * STUD;
+        const dist = (cx - localX) ** 2 + (cz - localZ) ** 2;
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { ...snap, dist };
+        }
+      }
+    }
+    if (best && best.dist <= (STUD * 2.6) ** 2) return best;
+  }
+  return null;
+}
+
 function searchLayer(grid, gx0, gz0, w, d, layer, localX, localZ) {
   let best = null;
   let bestDist = Infinity;

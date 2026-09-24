@@ -7,8 +7,8 @@ export function pedestalSlot(index) {
   const col = index % 4;
   const row = Math.floor(index / 4);
   return {
-    x: -0.1 + col * 0.42,
-    z: 0.42 + row * 0.46,
+    x: -0.05 + col * 0.34,
+    z: 0.62 + row * 0.4,
   };
 }
 
@@ -87,7 +87,7 @@ export function createWorld() {
   scene.fog = new THREE.Fog(0xe7e1d6, 7, 13);
 
   const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 40);
-  camera.position.set(0.55, 1.42, 1.55);
+  camera.position.set(0.15, 1.55, 1.05);
 
   const targets = [];
 
@@ -204,8 +204,8 @@ export function createWorld() {
 
 function createMachine(targets) {
   const group = new THREE.Group();
-  group.position.set(-0.62, 0, 0.22);
-  group.rotation.y = 0.38;
+  group.position.set(-0.78, 0, 0.32);
+  group.rotation.y = Math.atan2(0.9, 0.45);
 
   const caseMat = new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 0.55, metalness: 0.18 });
   const trimMat = new THREE.MeshStandardMaterial({ color: 0x3e4752, roughness: 0.45, metalness: 0.22 });

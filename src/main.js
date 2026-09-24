@@ -4,7 +4,7 @@ import { XRButton } from 'three/addons/webxr/XRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { createBrick, makeGhost, setBrickRaycast } from './bricks.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD } from './config.js';
-import { brickLocalPosition, createGrid, findSnap, occupy, release } from './grid.js';
+import { brickLocalPosition, canPlaceAssembly, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release } from './grid.js';
 import { createPedestal, createWorld } from './world.js';
 
 const statusEl = document.getElementById('status');
@@ -33,7 +33,7 @@ document.body.appendChild(XRButton.createButton(renderer, {
 }));
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.target.set(0.05, 0.86, -0.35);
+controls.target.set(-0.15, 0.84, -0.35);
 controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.49;
 controls.minDistance = 0.45;
@@ -53,12 +53,17 @@ const tmpDir = new THREE.Vector3();
 const selection = { colorId: 'red', shapeId: '2x4' };
 let held = null;
 let heldFrom = null;
+let assembly = null;
 let ghost = null;
 let hovered = null;
 let press = null;
 let pegScale = 1;
 let pegDrag = false;
 let nextPedestalId = 1;
+let hasAim = false;
+const yawQuat = new THREE.Quaternion();
+const yawEuler = new THREE.Euler();
+const lastAim = new THREE.Vector3();
 
 machine.refreshSelection(selection.colorId, selection.shapeId);
 paintSelection('Press ORDER to dispense');
@@ -100,9 +105,6 @@ function setupController(index) {
   });
   controller.addEventListener('selectstart', () => onXrSelect(controller));
   controller.addEventListener('selectend', () => onXrRelease(controller));
-  controller.addEventListener('squeezestart', () => {
-    if (held && heldFrom === controller) rotateHeld();
-  });
   scene.add(controller);
 
   const geometry = new THREE.BufferGeometry().setFromPoints([
@@ -269,14 +271,52 @@ function flash(mesh) {
   });
 }
 
-function grab(brick, holder) {
+function quarterTurns(object) {
+  object.updateWorldMatrix(true, false);
+  object.getWorldQuaternion(yawQuat);
+  yawEuler.setFromQuaternion(yawQuat, 'YXZ');
+  return ((Math.round(yawEuler.y / (Math.PI / 2)) % 4) + 4) % 4;
+}
+
+function gripHeld(controller) {
+  const button = controller?.userData.inputSource?.gamepad?.buttons?.[1];
+  return Boolean(button && (button.pressed || button.value > 0.6));
+}
+
+function nearbyBrick(controller) {
+  const origin = new THREE.Vector3();
+  controller.getWorldPosition(origin);
+  let best = null;
+  let bestDist = 0.16 * Math.max(pegScale, 0.75);
+  for (const item of targets) {
+    if (item.userData?.type !== 'brick' || item.userData.role === 'held') continue;
+    const point = new THREE.Vector3();
+    item.getWorldPosition(point);
+    const dist = point.distanceTo(origin);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = item;
+    }
+  }
+  return best;
+}
+
+function grab(brick, holder, whole) {
+  const group = whole && brick.userData.role === 'placed' ? connectedBricks(grid, brick) : [brick];
+  if (group.length > 1) grabAssembly(group, brick, holder);
+  else grabOne(brick, holder);
+}
+
+function grabOne(brick, holder) {
   if (brick.userData.role === 'placed') release(grid, brick);
   const fromSupply = brick.userData.role === 'supply';
   const pedestal = pedestals.find((item) => item.id === brick.userData.pedestalId);
   held = brick;
   heldFrom = holder;
+  assembly = null;
   brick.userData.role = 'held';
   brick.userData.snap = null;
+  brick.userData.yawOffset = 0;
   brick.scale.setScalar(1);
   const index = targets.indexOf(brick);
   if (index >= 0) targets.splice(index, 1);
@@ -285,9 +325,10 @@ function grab(brick, holder) {
   if (holder) {
     holder.attach(brick);
     brick.position.set(0, -0.02, -0.14);
-    brick.rotation.set(0, brick.userData.rot * Math.PI / 2, 0);
+    brick.rotation.set(0, 0, 0);
   } else {
     scene.attach(brick);
+    brick.rotation.set(0, brick.userData.rot * Math.PI / 2, 0);
   }
   syncBrickScale(brick);
 
@@ -301,32 +342,130 @@ function grab(brick, holder) {
     refill(pedestal, true);
     setStatus(`Picked up ${partLabel(brick.userData.colorId, brick.userData.shapeId)}. Another is on the pedestal.`);
   } else {
-    setStatus(`Holding ${partLabel(brick.userData.colorId, brick.userData.shapeId)}. It can hang past an edge.`);
+    setStatus(`Holding ${partLabel(brick.userData.colorId, brick.userData.shapeId)}. Release over the plate to place it.`);
+  }
+}
+
+function grabAssembly(bricks, primary, holder) {
+  const origin = primary.userData.anchor;
+  const pieces = bricks.map((item) => ({
+    brick: item,
+    dgx: item.userData.anchor.gx - origin.gx,
+    dgz: item.userData.anchor.gz - origin.gz,
+    dlayer: item.userData.anchor.layer - origin.layer,
+  }));
+  const carry = new THREE.Group();
+  gridGroup.add(carry);
+  carry.position.set(origin.gx * STUD, origin.layer * HEIGHT, origin.gz * STUD);
+  for (const piece of pieces) {
+    release(grid, piece.brick);
+    const index = targets.indexOf(piece.brick);
+    if (index >= 0) targets.splice(index, 1);
+    setBrickRaycast(piece.brick, false);
+    piece.brick.userData.role = 'held';
+    piece.brick.userData.snap = null;
+    const { w, d } = footprintOf(piece.brick);
+    carry.attach(piece.brick);
+    piece.brick.position.set((piece.dgx + w / 2) * STUD, piece.dlayer * HEIGHT, (piece.dgz + d / 2) * STUD);
+    piece.brick.rotation.set(0, piece.brick.userData.rot * Math.PI / 2, 0);
+    piece.brick.scale.setScalar(1);
+  }
+  if (holder) {
+    holder.attach(carry);
+    carry.position.set(0, -0.04, -0.28);
+    carry.rotation.set(0, 0, 0);
+  }
+  held = primary;
+  heldFrom = holder;
+  assembly = { pieces, carry };
+  if (ghost) ghost.visible = false;
+  setStatus(`Holding ${pieces.length} connected bricks. Release over the plate to set them down.`);
+}
+
+function rotateAssembly() {
+  const primary = held;
+  const { w: pw, d: pd } = footprintOf(primary);
+  const pcx = pw / 2;
+  const pcz = pd / 2;
+  const next = assembly.pieces.map((piece) => {
+    const { w, d } = footprintOf(piece.brick);
+    const cx = piece.dgx + w / 2;
+    const cz = piece.dgz + d / 2;
+    piece.brick.userData.rot = (piece.brick.userData.rot + 1) % 4;
+    const turned = footprintOf(piece.brick);
+    return {
+      piece,
+      cx: pcx - (cz - pcz),
+      cz: pcz + (cx - pcx),
+      w: turned.w,
+      d: turned.d,
+    };
+  });
+  const primaryNext = next.find((item) => item.piece.brick === primary);
+  const shiftX = primaryNext.cx - primaryNext.w / 2;
+  const shiftZ = primaryNext.cz - primaryNext.d / 2;
+  for (const item of next) {
+    item.piece.dgx = Math.round(item.cx - item.w / 2 - shiftX);
+    item.piece.dgz = Math.round(item.cz - item.d / 2 - shiftZ);
+    item.piece.brick.position.set(
+      (item.piece.dgx + item.w / 2) * STUD,
+      item.piece.dlayer * HEIGHT,
+      (item.piece.dgz + item.d / 2) * STUD,
+    );
+    item.piece.brick.rotation.set(0, item.piece.brick.userData.rot * Math.PI / 2, 0);
   }
 }
 
 function rotateHeld() {
   if (!held) return;
-  held.userData.rot = (held.userData.rot + 1) % 4;
-  held.rotation.y = held.userData.rot * Math.PI / 2;
-  if (ghost) ghost.rotation.y = held.rotation.y;
-  if (heldFrom) syncGhostMesh();
+  if (assembly) rotateAssembly();
+  else if (heldFrom) {
+    held.userData.yawOffset = ((held.userData.yawOffset || 0) + 1) % 4;
+    held.rotation.set(0, held.userData.yawOffset * Math.PI / 2, 0);
+  } else {
+    held.userData.rot = (held.userData.rot + 1) % 4;
+    held.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
+  }
+  if (hasAim) updateSnapFromPoint(lastAim, !heldFrom);
 }
 
-function syncGhostMesh() {
-  if (!held) return;
-  scene.remove(ghost);
-  ghost = makeGhost(held);
-  ghost.rotation.y = held.userData.rot * Math.PI / 2;
-  syncBrickScale(ghost);
-  scene.add(ghost);
+function placeAssembly() {
+  const snap = held.userData.snap;
+  if (!snap || !canPlaceAssembly(grid, assembly.pieces, snap)) {
+    setStatus('Still holding the build. Aim it at an open spot on the plate.');
+    return false;
+  }
+  const { pieces, carry } = assembly;
+  const count = pieces.length;
+  assembly = null;
+  held = null;
+  heldFrom = null;
+  for (const piece of pieces) {
+    const gx = snap.gx + piece.dgx;
+    const gz = snap.gz + piece.dgz;
+    const layer = snap.layer + piece.dlayer;
+    const { w, d } = footprintOf(piece.brick);
+    gridGroup.attach(piece.brick);
+    piece.brick.position.set((gx + w / 2) * STUD, layer * HEIGHT, (gz + d / 2) * STUD);
+    piece.brick.rotation.set(0, piece.brick.userData.rot * Math.PI / 2, 0);
+    piece.brick.scale.setScalar(1);
+    piece.brick.userData.role = 'placed';
+    piece.brick.userData.snap = null;
+    occupy(grid, piece.brick, gx, gz, layer);
+    setBrickRaycast(piece.brick, true);
+    targets.push(piece.brick);
+  }
+  carry.parent?.remove(carry);
+  setStatus(`Placed ${count} bricks.`);
+  return true;
 }
 
 function placeHeld() {
   if (!held) return false;
+  if (assembly) return placeAssembly();
   const snap = held.userData.snap;
   if (!snap) {
-    setStatus('Aim over the plate, or just past a brick so this one can hang.');
+    setStatus('Still holding it. Aim over the plate, or just past a brick.');
     return false;
   }
   const brick = held;
@@ -348,30 +487,42 @@ function placeHeld() {
   return true;
 }
 
-function dropLoose() {
-  if (!held) return;
-  const brick = held;
-  held = null;
-  heldFrom = null;
-  if (ghost) ghost.visible = false;
-  scene.attach(brick);
-  brick.userData.role = 'loose';
-  brick.userData.snap = null;
-  brick.scale.setScalar(1);
-  if (brick.position.y < 0.02) brick.position.y = 0.02;
-  syncBrickScale(brick);
-  setBrickRaycast(brick, true);
-  targets.push(brick);
-  setStatus('Set that brick down. Pick it up to try another spot.');
-}
-
 function updateSnapFromPoint(point, moveDesktopBrick) {
   if (!held) return;
+  lastAim.copy(point);
+  hasAim = true;
   localPoint.copy(point);
   gridGroup.worldToLocal(localPoint);
   const margin = STUD * 4;
   const nearBuild = localPoint.x > -margin && localPoint.z > -margin
     && localPoint.x < GRID_X * STUD + margin && localPoint.z < GRID_Z * STUD + margin;
+  if (assembly) {
+    const snap = nearBuild
+      ? findAssemblySnap(grid, assembly.pieces, held, localPoint.x, localPoint.y, localPoint.z)
+      : null;
+    held.userData.snap = snap;
+    if (!snap) {
+      if (moveDesktopBrick) {
+        scene.attach(assembly.carry);
+        assembly.carry.position.copy(point);
+        assembly.carry.position.y = Math.max(point.y, world.tableTop);
+        assembly.carry.rotation.set(0, 0, 0);
+        assembly.carry.scale.setScalar(pegScale);
+      } else if (heldFrom && assembly.carry.parent !== heldFrom) {
+        heldFrom.attach(assembly.carry);
+        assembly.carry.position.set(0, -0.04, -0.28);
+        assembly.carry.rotation.set(0, 0, 0);
+        assembly.carry.scale.setScalar(pegScale);
+      }
+      return;
+    }
+    gridGroup.attach(assembly.carry);
+    assembly.carry.position.set(snap.gx * STUD, snap.layer * HEIGHT, snap.gz * STUD);
+    assembly.carry.rotation.set(0, 0, 0);
+    assembly.carry.scale.setScalar(1);
+    return;
+  }
+  if (heldFrom) held.userData.rot = quarterTurns(held);
   const snap = nearBuild ? findSnap(grid, held, localPoint.x, localPoint.y, localPoint.z) : null;
   held.userData.snap = snap;
   if (!snap) {
@@ -379,8 +530,8 @@ function updateSnapFromPoint(point, moveDesktopBrick) {
     if (moveDesktopBrick) {
       scene.attach(held);
       held.position.copy(point);
-      held.position.y = Math.max(point.y + HEIGHT, world.tableTop);
-      held.rotation.y = held.userData.rot * Math.PI / 2;
+      held.position.y = Math.max(point.y + HEIGHT * pegScale, world.tableTop);
+      held.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
       syncBrickScale(held);
     }
     return;
@@ -389,7 +540,7 @@ function updateSnapFromPoint(point, moveDesktopBrick) {
   if (moveDesktopBrick) {
     gridGroup.attach(held);
     held.position.set(pos.x, pos.y, pos.z);
-    held.rotation.y = held.userData.rot * Math.PI / 2;
+    held.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
     syncBrickScale(held);
     if (ghost) ghost.visible = false;
     return;
@@ -397,7 +548,7 @@ function updateSnapFromPoint(point, moveDesktopBrick) {
   if (ghost) {
     gridGroup.attach(ghost);
     ghost.position.set(pos.x, pos.y, pos.z);
-    ghost.rotation.y = held.userData.rot * Math.PI / 2;
+    ghost.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
     syncBrickScale(ghost);
     ghost.visible = true;
   }
@@ -414,6 +565,10 @@ function inBuild(object) {
 
 function syncBrickScale(brick) {
   if (!brick) return;
+  if (assembly?.pieces.some((piece) => piece.brick === brick)) {
+    brick.scale.setScalar(1);
+    return;
+  }
   brick.scale.setScalar(inBuild(brick) ? 1 : pegScale);
 }
 
@@ -427,6 +582,7 @@ function setPegScale(next) {
   }
   syncBrickScale(held);
   syncBrickScale(ghost);
+  if (assembly) assembly.carry.scale.setScalar(inBuild(assembly.carry) ? 1 : pegScale);
   pegReadout.textContent = `${(STUD * pegScale * 100).toFixed(1)} cm`;
   if (document.activeElement !== pegInput) pegInput.value = String(pegScale);
 }
@@ -485,14 +641,22 @@ function onPointerDown(event) {
     controls.enabled = false;
     setPegFromHit(hit);
   }
-  const interactive = hit && (hit.owner.userData.type === 'ui' || hit.owner.userData.type === 'brick' || (held && hit.owner.userData.type === 'plate'));
-  if (interactive || held) controls.enabled = false;
+  const owner = hit?.owner ?? null;
   press = {
     x: event.clientX,
     y: event.clientY,
-    owner: hit?.owner ?? null,
-    point: hit?.point?.clone() ?? null,
+    owner,
+    grabbedNow: false,
   };
+  if (!held && owner?.userData.type === 'brick') {
+    grab(owner, null, event.shiftKey);
+    press.grabbedNow = true;
+    raycaster.setFromCamera(pointer, camera);
+    const aim = placementPoint();
+    if (aim) updateSnapFromPoint(aim, true);
+  }
+  const interactive = owner && (owner.userData.type === 'ui' || owner.userData.type === 'brick' || held);
+  if (interactive || held) controls.enabled = false;
 }
 
 function onPointerUp(event) {
@@ -503,27 +667,24 @@ function onPointerUp(event) {
     return;
   }
   if (!press || renderer.xr.isPresenting) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
   const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
-  const clicked = moved < 6;
-  const { owner, point } = press;
+  const clicked = moved < 8;
+  const { owner, grabbedNow } = press;
   press = null;
   controls.enabled = true;
-  if (!clicked) return;
-  if (owner?.userData.type === 'ui') {
+  if (owner?.userData.type === 'ui' && clicked) {
     activateUi(owner);
     return;
   }
-  if (!held && owner?.userData.type === 'brick') {
-    grab(owner, null);
-    if (point) updateSnapFromPoint(point, true);
-    return;
-  }
-  if (held && !heldFrom) {
-    raycaster.setFromCamera(pointer, camera);
-    const aim = placementPoint();
-    if (aim) updateSnapFromPoint(aim, true);
-    placeHeld();
-  }
+  if (!held || heldFrom) return;
+  if (grabbedNow && clicked) return;
+  raycaster.setFromCamera(pointer, camera);
+  const aim = placementPoint();
+  if (aim) updateSnapFromPoint(aim, true);
+  placeHeld();
 }
 
 function onKeyDown(event) {
@@ -534,17 +695,18 @@ function onKeyDown(event) {
 
 function onXrSelect(controller) {
   const hit = hitFromController(controller);
-  if (!hit) return;
-  if (hit.owner.userData.action === 'peg') {
+  if (hit?.owner?.userData.action === 'peg') {
     controller.userData.pegDrag = true;
     setPegFromHit(hit);
     return;
   }
-  if (hit.owner.userData.type === 'ui') {
+  if (hit?.owner?.userData.type === 'ui') {
     activateUi(hit.owner);
     return;
   }
-  if (!held && hit.owner.userData.type === 'brick') grab(hit.owner, controller);
+  if (held) return;
+  const target = hit?.owner?.userData.type === 'brick' ? hit.owner : nearbyBrick(controller);
+  if (target) grab(target, controller, gripHeld(controller));
 }
 
 function onXrRelease(controller) {
@@ -562,7 +724,7 @@ function onXrRelease(controller) {
     held.getWorldPosition(worldPoint);
     updateSnapFromPoint(worldPoint, false);
   }
-  if (!placeHeld()) dropLoose();
+  placeHeld();
 }
 
 function pollRotate(controller) {
