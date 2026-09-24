@@ -8,8 +8,8 @@ export function createGrid() {
   return new Map();
 }
 
-export function footprintOf(brick) {
-  const swap = brick.userData.rot % 2 === 1;
+export function footprintOf(brick, rot = brick.userData.rot || 0) {
+  const swap = ((rot % 4) + 4) % 2 === 1;
   return {
     w: swap ? brick.userData.baseD : brick.userData.baseW,
     d: swap ? brick.userData.baseW : brick.userData.baseD,
@@ -24,8 +24,8 @@ function rotateXZ(x, z, rot) {
   return { x, z };
 }
 
-export function layoutOf(brick) {
-  const rot = brick.userData.rot || 0;
+export function layoutOf(brick, rot = brick.userData.rot || 0) {
+  rot = ((rot % 4) + 4) % 4;
   const bw = brick.userData.baseW;
   const bd = brick.userData.baseD;
   const kind = brick.userData.kind || 'box';
@@ -144,7 +144,7 @@ export function canPlaceAssembly(grid, pieces, snap) {
   for (const piece of pieces) {
     const layer = snap.layer + piece.dlayer;
     if (layer < 0 || layer > MAX_LAYER) return false;
-    for (const cell of layoutOf(piece.brick)) {
+    for (const cell of layoutOf(piece.brick, piece.rot)) {
       const x = snap.gx + piece.dgx + cell.x;
       const z = snap.gz + piece.dgz + cell.z;
       const key = cellKey(x, z, layer);
@@ -158,7 +158,7 @@ export function canPlaceAssembly(grid, pieces, snap) {
     const layer = snap.layer + piece.dlayer;
     let supported = 0;
     let feet = 0;
-    for (const cell of layoutOf(piece.brick)) {
+    for (const cell of layoutOf(piece.brick, piece.rot)) {
       if (!cell.foot) continue;
       feet += 1;
       const x = snap.gx + piece.dgx + cell.x;
@@ -211,8 +211,42 @@ export function findSnap(grid, brick, localX, localY, localZ) {
   return closestSnap(localX, localY, localZ, w, d, aim, (gx, gz, layer) => canPlace(grid, brick, gx, gz, layer));
 }
 
+export function rotatePieceRecords(records, primaryBrick) {
+  const primary = records.find((item) => item.brick === primaryBrick) || records[0];
+  const primarySize = footprintOf(primary.brick, primary.rot);
+  const pcx = primary.dgx + primarySize.w / 2;
+  const pcz = primary.dgz + primarySize.d / 2;
+  const turned = records.map((item) => {
+    const size = footprintOf(item.brick, item.rot);
+    const dx = item.dgx + size.w / 2 - pcx;
+    const dz = item.dgz + size.d / 2 - pcz;
+    const rot = (item.rot + 1) % 4;
+    const next = footprintOf(item.brick, rot);
+    return {
+      ...item,
+      rot,
+      cx: pcx + dz,
+      cz: pcz - dx,
+      w: next.w,
+      d: next.d,
+    };
+  });
+  const pivot = turned.find((item) => item.brick === primary.brick);
+  const shiftX = pivot.cx - pivot.w / 2;
+  const shiftZ = pivot.cz - pivot.d / 2;
+  return turned.map((item) => ({
+    brick: item.brick,
+    home: item.home,
+    dlayer: item.dlayer,
+    dgx: Math.round(item.cx - item.w / 2 - shiftX),
+    dgz: Math.round(item.cz - item.d / 2 - shiftZ),
+    rot: item.rot,
+  }));
+}
+
 export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ) {
-  const { w, d } = footprintOf(primary);
+  const primaryPiece = pieces.find((piece) => piece.brick === primary);
+  const { w, d } = footprintOf(primary, primaryPiece?.rot ?? primary.userData.rot);
   const aim = Math.max(0, Math.round(localY / HEIGHT));
   return closestSnap(localX, localY, localZ, w, d, aim, (gx, gz, layer) => (
     canPlaceAssembly(grid, pieces, { gx, gz, layer })

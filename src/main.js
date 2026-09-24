@@ -3,8 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XRButton } from 'three/addons/webxr/XRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { createBrick, makeGhost, setBrickRaycast } from './bricks.js';
-import { colorById, GRID_X, GRID_Z, HEIGHT, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD } from './config.js';
-import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release } from './grid.js';
+import { colorById, GRID_X, GRID_Z, HEIGHT, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
+import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
 import { createPedestal, createWorld } from './world.js';
 
 const statusEl = document.getElementById('status');
@@ -124,6 +124,7 @@ function setupController(index) {
   controller.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xfff4e4 })));
 
   const grip = renderer.xr.getControllerGrip(index);
+  controller.userData.grip = grip;
   grip.add(controllerFactory.createControllerModel(grip));
   scene.add(grip);
   return controller;
@@ -401,14 +402,8 @@ function triggerHeld(controller) {
 }
 
 const handPoint = new THREE.Vector3();
-const brickPoint = new THREE.Vector3();
 const scalePoint = new THREE.Vector3();
-
-function brickRadius(brick) {
-  const { w, d } = footprintOf(brick);
-  brick.getWorldScale(scalePoint);
-  return 0.5 * Math.hypot(w, d) * STUD * scalePoint.x;
-}
+const localGrab = new THREE.Vector3();
 
 function eachLooseBrick(visit) {
   for (const item of targets) {
@@ -417,12 +412,39 @@ function eachLooseBrick(visit) {
   }
 }
 
-function closestBrickToHand(origin) {
+function surfaceGap(brick, world) {
+  brick.updateWorldMatrix(true, false);
+  localGrab.copy(world);
+  brick.worldToLocal(localGrab);
+  const { w, d } = footprintOf(brick);
+  const dx = localGrab.x - THREE.MathUtils.clamp(localGrab.x, -w * STUD * 0.5, w * STUD * 0.5);
+  const dy = localGrab.y - THREE.MathUtils.clamp(localGrab.y, 0, HEIGHT + STUD_H);
+  const dz = localGrab.z - THREE.MathUtils.clamp(localGrab.z, -d * STUD * 0.5, d * STUD * 0.5);
+  brick.getWorldScale(scalePoint);
+  return Math.hypot(dx, dy, dz) * scalePoint.x;
+}
+
+function handPoints(controller) {
+  const points = [];
+  controller.getWorldPosition(handPoint);
+  controller.getWorldQuaternion(yawQuat);
+  points.push(handPoint.clone());
+  const grip = controller.userData.grip;
+  if (grip) points.push(grip.getWorldPosition(new THREE.Vector3()));
+  const side = new THREE.Vector3(1, 0, 0).applyQuaternion(yawQuat);
+  const down = new THREE.Vector3(0, -1, 0).applyQuaternion(yawQuat);
+  points.push(handPoint.clone().addScaledVector(side, 0.07));
+  points.push(handPoint.clone().addScaledVector(side, -0.07));
+  points.push(handPoint.clone().addScaledVector(down, 0.06));
+  return points;
+}
+
+function closestBrickToHand(points) {
   let best = null;
-  let bestDist = 0.38;
+  let bestDist = 0.22;
   eachLooseBrick((item) => {
-    item.getWorldPosition(brickPoint);
-    const dist = Math.max(0, brickPoint.distanceTo(origin) - brickRadius(item));
+    let dist = Infinity;
+    for (const point of points) dist = Math.min(dist, surfaceGap(item, point));
     if (dist < bestDist) {
       bestDist = dist;
       best = item;
@@ -433,18 +455,18 @@ function closestBrickToHand(origin) {
 
 function closestBrickToRay(origin, forward) {
   let best = null;
-  let bestDist = Infinity;
-  eachLooseBrick((item) => {
-    item.getWorldPosition(brickPoint);
-    brickPoint.sub(origin);
-    const along = brickPoint.dot(forward);
-    if (along < 0.04 || along > 1.5) return;
-    const radialSq = Math.max(0, brickPoint.lengthSq() - along * along);
-    const allowance = 0.12 + brickRadius(item) * 0.4;
-    if (radialSq > allowance * allowance || radialSq >= bestDist) return;
-    bestDist = radialSq;
-    best = item;
-  });
+  let bestDist = 0.08;
+  const sample = new THREE.Vector3();
+  for (let distance = 0.04; distance <= 0.9; distance += 0.06) {
+    sample.copy(origin).addScaledVector(forward, distance);
+    eachLooseBrick((item) => {
+      const gap = surfaceGap(item, sample);
+      if (gap < bestDist) {
+        bestDist = gap;
+        best = item;
+      }
+    });
+  }
   return best;
 }
 
@@ -538,37 +560,34 @@ function grabAssembly(bricks, primary, holder) {
   setStatus(`Holding ${pieces.length} connected bricks. Let go to drop them.`);
 }
 
+function pieceRecords() {
+  return assembly.pieces.map((piece) => ({
+    brick: piece.brick,
+    home: piece.home,
+    dgx: piece.dgx,
+    dgz: piece.dgz,
+    dlayer: piece.dlayer,
+    rot: piece.brick.userData.rot,
+  }));
+}
+
+function placementPieces() {
+  let records = pieceRecords();
+  const turns = heldFrom ? quarterTurns(assembly.carry) : 0;
+  for (let i = 0; i < turns; i += 1) records = rotatePieceRecords(records, held);
+  return records;
+}
+
 function rotateAssembly() {
-  const primary = held;
-  const { w: pw, d: pd } = footprintOf(primary);
-  const pcx = pw / 2;
-  const pcz = pd / 2;
-  const next = assembly.pieces.map((piece) => {
+  const turned = rotatePieceRecords(pieceRecords(), held);
+  for (const item of turned) {
+    const piece = assembly.pieces.find((entry) => entry.brick === item.brick);
+    piece.dgx = item.dgx;
+    piece.dgz = item.dgz;
+    piece.brick.userData.rot = item.rot;
     const { w, d } = footprintOf(piece.brick);
-    const cx = piece.dgx + w / 2;
-    const cz = piece.dgz + d / 2;
-    piece.brick.userData.rot = (piece.brick.userData.rot + 1) % 4;
-    const turned = footprintOf(piece.brick);
-    return {
-      piece,
-      cx: pcx - (cz - pcz),
-      cz: pcz + (cx - pcx),
-      w: turned.w,
-      d: turned.d,
-    };
-  });
-  const primaryNext = next.find((item) => item.piece.brick === primary);
-  const shiftX = primaryNext.cx - primaryNext.w / 2;
-  const shiftZ = primaryNext.cz - primaryNext.d / 2;
-  for (const item of next) {
-    item.piece.dgx = Math.round(item.cx - item.w / 2 - shiftX);
-    item.piece.dgz = Math.round(item.cz - item.d / 2 - shiftZ);
-    item.piece.brick.position.set(
-      (item.piece.dgx + item.w / 2) * STUD,
-      item.piece.dlayer * HEIGHT,
-      (item.piece.dgz + item.d / 2) * STUD,
-    );
-    item.piece.brick.rotation.set(0, item.piece.brick.userData.rot * Math.PI / 2, 0);
+    piece.brick.position.set((piece.dgx + w / 2) * STUD, piece.dlayer * HEIGHT, (piece.dgz + d / 2) * STUD);
+    piece.brick.rotation.set(0, piece.brick.userData.rot * Math.PI / 2, 0);
   }
 }
 
@@ -587,8 +606,9 @@ function rotateHeld() {
 
 function placeAssembly() {
   const snap = held.userData.snap;
-  if (!snap || !canPlaceAssembly(grid, assembly.pieces, snap)) return false;
-  const { pieces, carry } = assembly;
+  const pieces = placementPieces();
+  if (!snap || !canPlaceAssembly(grid, pieces, snap)) return false;
+  const { carry } = assembly;
   const count = pieces.length;
   assembly = null;
   held = null;
@@ -598,10 +618,11 @@ function placeAssembly() {
     const gx = snap.gx + piece.dgx;
     const gz = snap.gz + piece.dgz;
     const layer = snap.layer + piece.dlayer;
+    piece.brick.userData.rot = piece.rot;
     const { w, d } = footprintOf(piece.brick);
     gridGroup.attach(piece.brick);
     piece.brick.position.set((gx + w / 2) * STUD, layer * HEIGHT, (gz + d / 2) * STUD);
-    piece.brick.rotation.set(0, piece.brick.userData.rot * Math.PI / 2, 0);
+    piece.brick.rotation.set(0, piece.rot * Math.PI / 2, 0);
     piece.brick.scale.setScalar(1);
     piece.brick.userData.role = 'placed';
     piece.brick.userData.snap = null;
@@ -751,7 +772,7 @@ function updateSnapFromPoint(point) {
     && localPoint.x < GRID_X * STUD + margin && localPoint.z < GRID_Z * STUD + margin;
   if (assembly) {
     held.userData.snap = nearBuild
-      ? findAssemblySnap(grid, assembly.pieces, held, localPoint.x, localPoint.y, localPoint.z)
+      ? findAssemblySnap(grid, placementPieces(), held, localPoint.x, localPoint.y, localPoint.z)
       : null;
     return;
   }
@@ -916,21 +937,20 @@ function onXrTrigger(controller) {
 function onXrSqueeze(controller) {
   if (held) return;
   const whole = triggerHeld(controller);
-  controller.getWorldPosition(handPoint);
-  const inHand = closestBrickToHand(handPoint);
+  const inHand = closestBrickToHand(handPoints(controller));
   if (inHand) {
     grab(inHand, controller, whole);
     return;
   }
   tmpDir.set(0, 0, -1).applyQuaternion(controller.quaternion);
+  controller.getWorldPosition(handPoint);
   const hit = hitFromController(controller);
-  const target = closestBrickToRay(handPoint, tmpDir) || (hit?.owner?.userData.type === 'brick' ? hit.owner : null);
+  const target = (hit?.owner?.userData.type === 'brick' ? hit.owner : null) || closestBrickToRay(handPoint, tmpDir);
   if (target) grab(target, controller, whole);
 }
 
 function piecePoint() {
-  const target = assembly ? assembly.carry : held;
-  target.getWorldPosition(worldPoint);
+  held.getWorldPosition(worldPoint);
   return worldPoint;
 }
 

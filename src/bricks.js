@@ -76,66 +76,87 @@ function geometryFor(w, d) {
   return geometry;
 }
 
-function extrudedProfile(key, width, build) {
-  let geometry = bodyGeometry.get(key);
-  if (geometry) return geometry;
+function profileGeometry(width, build) {
   const shape = new THREE.Shape();
   build(shape);
-  geometry = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false, steps: 1 });
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false, steps: 1 });
   geometry.translate(0, 0, -width / 2);
   geometry.rotateY(-Math.PI / 2);
+  return geometry;
+}
+
+function cellCenter(ix, iz, w, d) {
+  return {
+    x: (ix - (w - 1) / 2) * STUD,
+    z: (iz - (d - 1) / 2) * STUD,
+  };
+}
+
+function addRoundHole(shape, x, z) {
+  const hole = new THREE.Path();
+  hole.absarc(x, -z, HOLE_R, 0, Math.PI * 2, true);
+  shape.holes.push(hole);
+}
+
+function socketPlate(width, depth, centerX, centerZ, holes) {
+  const shape = new THREE.Shape();
+  roundedRect(shape, centerX - width / 2, -(centerZ + depth / 2), width, depth, 0.0025);
+  for (const hole of holes) addRoundHole(shape, hole.x, hole.z);
+  return extrudeUp(shape, STUD_H);
+}
+
+function slopeGeometry(w, d) {
+  const key = `slope${w}x${d}`;
+  let geometry = bodyGeometry.get(key);
+  if (geometry) return geometry;
+  const width = w * STUD - GAP;
+  const depth = d * STUD - GAP;
+  const z0 = -depth / 2;
+  const z1 = depth / 2;
+  const rise = HEIGHT - STUD_H;
+  const knee = Math.max(z0 + 0.004, z1 - rise);
+  const holes = [];
+  for (let x = 0; x < w; x += 1) {
+    for (let z = 0; z < d; z += 1) holes.push(cellCenter(x, z, w, d));
+  }
+  const plate = socketPlate(width, depth, 0, 0, holes);
+  const upper = profileGeometry(width, (shape) => {
+    shape.moveTo(z0, STUD_H);
+    shape.lineTo(z1, STUD_H);
+    shape.lineTo(z1, HEIGHT);
+    shape.lineTo(knee, HEIGHT);
+    shape.lineTo(z0, STUD_H);
+  });
+  geometry = mergeGeometries([plate, upper]);
   geometry.computeVertexNormals();
   bodyGeometry.set(key, geometry);
   return geometry;
 }
 
-function slopeGeometry(w, d) {
-  const width = w * STUD - GAP;
-  const depth = d * STUD - GAP;
-  const z0 = -depth / 2;
-  const z1 = depth / 2;
-  const knee = Math.max(z0 + 0.004, z1 - HEIGHT);
-  const lip = 0.0035;
-  const span = Math.max(knee - z0, 0.001);
-  const zA = z0 + ((STUD_H + 0.003) / HEIGHT) * span;
-  const zB = z1 - lip;
-  return extrudedProfile(`slope${w}x${d}`, width, (shape) => {
-    shape.moveTo(z0, 0);
-    if (zB > zA + 0.004) {
-      shape.lineTo(zA, 0);
-      shape.lineTo(zA, STUD_H);
-      shape.lineTo(zB, STUD_H);
-      shape.lineTo(zB, 0);
-    }
-    shape.lineTo(z1, 0);
-    shape.lineTo(z1, HEIGHT);
-    shape.lineTo(knee, HEIGHT);
-    shape.lineTo(z0, 0);
-  });
-}
-
 function wallGeometry(w, d) {
+  const key = `wall${w}x${d}`;
+  let geometry = bodyGeometry.get(key);
+  if (geometry) return geometry;
   const width = w * STUD - GAP;
   const depth = d * STUD - GAP;
-  const z0 = -depth / 2;
   const z1 = depth / 2;
-  const knee = Math.max(z0 + 0.004, z1 - HEIGHT);
-  const lip = 0.0035;
-  const notch0 = z0 + lip;
-  const notch1 = knee - lip;
-  return extrudedProfile(`wall${w}x${d}`, width, (shape) => {
-    shape.moveTo(z0, 0);
-    if (notch1 > notch0 + 0.004) {
-      shape.lineTo(notch0, 0);
-      shape.lineTo(notch0, STUD_H);
-      shape.lineTo(notch1, STUD_H);
-      shape.lineTo(notch1, 0);
-    }
-    shape.lineTo(knee, 0);
+  const soleDepth = STUD - GAP;
+  const soleZ = cellCenter(0, 0, w, d).z;
+  const soleFront = soleZ + soleDepth / 2;
+  const holes = [];
+  for (let x = 0; x < w; x += 1) holes.push(cellCenter(x, 0, w, d));
+  const plate = socketPlate(width, soleDepth, 0, soleZ, holes);
+  const upper = profileGeometry(width, (shape) => {
+    shape.moveTo(-depth / 2, STUD_H);
+    shape.lineTo(soleFront, STUD_H);
     shape.lineTo(z1, HEIGHT);
-    shape.lineTo(z0, HEIGHT);
+    shape.lineTo(-depth / 2, HEIGHT);
     shape.closePath();
   });
+  geometry = mergeGeometries([plate, upper]);
+  geometry.computeVertexNormals();
+  bodyGeometry.set(key, geometry);
+  return geometry;
 }
 
 export function createBrick(shape, color) {
