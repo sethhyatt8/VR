@@ -105,8 +105,16 @@ function setupController(index) {
     controller.userData.inputSource = event.data;
     controller.userData.rotateLatch = false;
   });
-  controller.addEventListener('selectstart', () => onXrSelect(controller));
-  controller.addEventListener('selectend', () => onXrRelease(controller));
+  controller.addEventListener('selectstart', () => {
+    controller.userData.triggerDown = true;
+    onXrTrigger(controller);
+  });
+  controller.addEventListener('selectend', () => {
+    controller.userData.triggerDown = false;
+    if (controller.userData.pegDrag) controller.userData.pegDrag = false;
+  });
+  controller.addEventListener('squeezestart', () => onXrSqueeze(controller));
+  controller.addEventListener('squeezeend', () => onXrRelease(controller));
   scene.add(controller);
 
   const geometry = new THREE.BufferGeometry().setFromPoints([
@@ -374,9 +382,8 @@ function quarterTurns(object) {
   return ((Math.round(yawEuler.y / (Math.PI / 2)) % 4) + 4) % 4;
 }
 
-function gripHeld(controller) {
-  const button = controller?.userData.inputSource?.gamepad?.buttons?.[1];
-  return Boolean(button && (button.pressed || button.value > 0.6));
+function triggerHeld(controller) {
+  return Boolean(controller?.userData.triggerDown);
 }
 
 const handPoint = new THREE.Vector3();
@@ -881,27 +888,30 @@ function onKeyDown(event) {
   if (event.key === 'Enter') orderSelection();
 }
 
-function onXrSelect(controller) {
+function onXrTrigger(controller) {
+  if (held) return;
   const hit = hitFromController(controller);
-  controller.getWorldPosition(handPoint);
-  const inHand = !held ? closestBrickToHand(handPoint) : null;
-  if (inHand) {
-    grab(inHand, controller, gripHeld(controller));
-    return;
-  }
   if (hit?.owner?.userData.action === 'peg') {
     controller.userData.pegDrag = true;
     setPegFromHit(hit);
     return;
   }
-  if (hit?.owner?.userData.type === 'ui') {
-    activateUi(hit.owner);
+  if (hit?.owner?.userData.type === 'ui') activateUi(hit.owner);
+}
+
+function onXrSqueeze(controller) {
+  if (held) return;
+  const whole = triggerHeld(controller);
+  controller.getWorldPosition(handPoint);
+  const inHand = closestBrickToHand(handPoint);
+  if (inHand) {
+    grab(inHand, controller, whole);
     return;
   }
-  if (held) return;
   tmpDir.set(0, 0, -1).applyQuaternion(controller.quaternion);
+  const hit = hitFromController(controller);
   const target = closestBrickToRay(handPoint, tmpDir) || (hit?.owner?.userData.type === 'brick' ? hit.owner : null);
-  if (target) grab(target, controller, gripHeld(controller));
+  if (target) grab(target, controller, whole);
 }
 
 function piecePoint() {

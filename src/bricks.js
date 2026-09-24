@@ -39,7 +39,6 @@ function extrudedProfile(key, width, build) {
   geometry = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false, steps: 1 });
   geometry.translate(0, 0, -width / 2);
   geometry.rotateY(-Math.PI / 2);
-  geometry.translate(width / 2, 0, 0);
   geometry.computeVertexNormals();
   bodyGeometry.set(key, geometry);
   return geometry;
