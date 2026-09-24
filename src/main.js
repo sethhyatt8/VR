@@ -315,21 +315,51 @@ function gripHeld(controller) {
   return Boolean(button && (button.pressed || button.value > 0.6));
 }
 
-function nearbyBrick(controller) {
-  const origin = new THREE.Vector3();
-  controller.getWorldPosition(origin);
-  let best = null;
-  let bestDist = 0.16 * Math.max(pegScale, 0.75);
+const handPoint = new THREE.Vector3();
+const brickPoint = new THREE.Vector3();
+const scalePoint = new THREE.Vector3();
+
+function brickRadius(brick) {
+  const { w, d } = footprintOf(brick);
+  brick.getWorldScale(scalePoint);
+  return 0.5 * Math.hypot(w, d) * STUD * scalePoint.x;
+}
+
+function eachLooseBrick(visit) {
   for (const item of targets) {
     if (item.userData?.type !== 'brick' || item.userData.role === 'held') continue;
-    const point = new THREE.Vector3();
-    item.getWorldPosition(point);
-    const dist = point.distanceTo(origin);
+    visit(item);
+  }
+}
+
+function closestBrickToHand(origin) {
+  let best = null;
+  let bestDist = 0.38;
+  eachLooseBrick((item) => {
+    item.getWorldPosition(brickPoint);
+    const dist = Math.max(0, brickPoint.distanceTo(origin) - brickRadius(item));
     if (dist < bestDist) {
       bestDist = dist;
       best = item;
     }
-  }
+  });
+  return best;
+}
+
+function closestBrickToRay(origin, forward) {
+  let best = null;
+  let bestDist = Infinity;
+  eachLooseBrick((item) => {
+    item.getWorldPosition(brickPoint);
+    brickPoint.sub(origin);
+    const along = brickPoint.dot(forward);
+    if (along < 0.04 || along > 1.5) return;
+    const radialSq = Math.max(0, brickPoint.lengthSq() - along * along);
+    const allowance = 0.12 + brickRadius(item) * 0.4;
+    if (radialSq > allowance * allowance || radialSq >= bestDist) return;
+    bestDist = radialSq;
+    best = item;
+  });
   return best;
 }
 
@@ -787,6 +817,12 @@ function onKeyDown(event) {
 
 function onXrSelect(controller) {
   const hit = hitFromController(controller);
+  controller.getWorldPosition(handPoint);
+  const inHand = !held ? closestBrickToHand(handPoint) : null;
+  if (inHand) {
+    grab(inHand, controller, gripHeld(controller));
+    return;
+  }
   if (hit?.owner?.userData.action === 'peg') {
     controller.userData.pegDrag = true;
     setPegFromHit(hit);
@@ -797,7 +833,8 @@ function onXrSelect(controller) {
     return;
   }
   if (held) return;
-  const target = hit?.owner?.userData.type === 'brick' ? hit.owner : nearbyBrick(controller);
+  tmpDir.set(0, 0, -1).applyQuaternion(controller.quaternion);
+  const target = closestBrickToRay(handPoint, tmpDir) || (hit?.owner?.userData.type === 'brick' ? hit.owner : null);
   if (target) grab(target, controller, gripHeld(controller));
 }
 
