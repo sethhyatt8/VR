@@ -16,42 +16,97 @@ export function footprintOf(brick) {
   };
 }
 
+function rotateXZ(x, z, rot) {
+  const turn = ((rot % 4) + 4) % 4;
+  if (turn === 1) return { x: z, z: -x };
+  if (turn === 2) return { x: -x, z: -z };
+  if (turn === 3) return { x: -z, z: x };
+  return { x, z };
+}
+
+export function layoutOf(brick) {
+  const rot = brick.userData.rot || 0;
+  const bw = brick.userData.baseW;
+  const bd = brick.userData.baseD;
+  const kind = brick.userData.kind || 'box';
+  const raw = [];
+  for (let ix = 0; ix < bw; ix += 1) {
+    for (let iz = 0; iz < bd; iz += 1) {
+      let x = ix + 0.5 - bw / 2;
+      let z = iz + 0.5 - bd / 2;
+      ({ x, z } = rotateXZ(x, z, rot));
+      raw.push({
+        x,
+        z,
+        stud: kind !== 'slope' || iz === bd - 1,
+        foot: kind !== 'wall' || iz === 0,
+      });
+    }
+  }
+  const minX = Math.min(...raw.map((cell) => cell.x));
+  const minZ = Math.min(...raw.map((cell) => cell.z));
+  return raw.map((cell) => ({
+    x: Math.round(cell.x - minX - 0.5),
+    z: Math.round(cell.z - minZ - 0.5),
+    stud: cell.stud,
+    foot: cell.foot,
+  }));
+}
+
 function onPlate(x, z) {
   return x >= 0 && z >= 0 && x < GRID_X && z < GRID_Z;
 }
 
-export function canPlace(grid, gx, gz, w, d, layer) {
+function hasStud(grid, x, z, layer) {
+  const below = grid.get(cellKey(x, z, layer));
+  if (!below) return false;
+  const studs = below.userData.studSet;
+  return !studs || studs.has(cellKey(x, z, layer));
+}
+
+export function columnTop(grid, gx, gz) {
+  for (let layer = MAX_LAYER; layer >= 0; layer -= 1) {
+    const brick = grid.get(cellKey(gx, gz, layer));
+    if (brick) return { brick, layer };
+  }
+  return null;
+}
+
+export function canPlace(grid, brick, gx, gz, layer) {
   if (layer < 0 || layer > MAX_LAYER) return false;
+  const cells = layoutOf(brick);
+  for (const cell of cells) {
+    if (grid.has(cellKey(gx + cell.x, gz + cell.z, layer))) return false;
+  }
   let supported = 0;
-  for (let x = 0; x < w; x += 1) {
-    for (let z = 0; z < d; z += 1) {
-      const cx = gx + x;
-      const cz = gz + z;
-      if (grid.has(cellKey(cx, cz, layer))) return false;
-      const resting = layer === 0 ? onPlate(cx, cz) : grid.has(cellKey(cx, cz, layer - 1));
-      if (resting) supported += 1;
-    }
+  for (const cell of cells) {
+    if (!cell.foot) continue;
+    const cx = gx + cell.x;
+    const cz = gz + cell.z;
+    const resting = layer === 0 ? onPlate(cx, cz) : hasStud(grid, cx, cz, layer - 1);
+    if (resting) supported += 1;
   }
   return supported > 0;
 }
 
 export function occupy(grid, brick, gx, gz, layer) {
-  const { w, d } = footprintOf(brick);
   const cells = [];
-  for (let x = 0; x < w; x += 1) {
-    for (let z = 0; z < d; z += 1) {
-      const key = cellKey(gx + x, gz + z, layer);
-      grid.set(key, brick);
-      cells.push(key);
-    }
+  const studs = new Set();
+  for (const cell of layoutOf(brick)) {
+    const key = cellKey(gx + cell.x, gz + cell.z, layer);
+    grid.set(key, brick);
+    cells.push(key);
+    if (cell.stud) studs.add(key);
   }
   brick.userData.cells = cells;
+  brick.userData.studSet = studs;
   brick.userData.anchor = { gx, gz, layer };
 }
 
 export function release(grid, brick) {
   for (const key of brick.userData.cells || []) grid.delete(key);
   brick.userData.cells = null;
+  brick.userData.studSet = null;
   brick.userData.anchor = null;
 }
 
@@ -83,87 +138,53 @@ export function connectedBricks(grid, start) {
   return found;
 }
 
-function assemblyCells(pieces, snap) {
-  const cells = [];
+export function canPlaceAssembly(grid, pieces, snap) {
+  const occupied = new Set();
+  const studs = new Set();
   for (const piece of pieces) {
-    const { w, d } = footprintOf(piece.brick);
-    for (let x = 0; x < w; x += 1) {
-      for (let z = 0; z < d; z += 1) {
-        cells.push({
-          x: snap.gx + piece.dgx + x,
-          z: snap.gz + piece.dgz + z,
-          layer: snap.layer + piece.dlayer,
-          brick: piece.brick,
-        });
-      }
+    const layer = snap.layer + piece.dlayer;
+    if (layer < 0 || layer > MAX_LAYER) return false;
+    for (const cell of layoutOf(piece.brick)) {
+      const x = snap.gx + piece.dgx + cell.x;
+      const z = snap.gz + piece.dgz + cell.z;
+      const key = cellKey(x, z, layer);
+      if (occupied.has(key) || grid.has(key)) return false;
+      occupied.add(key);
+      if (cell.stud) studs.add(key);
     }
   }
-  return cells;
-}
-
-export function canPlaceAssembly(grid, pieces, snap) {
-  const cells = assemblyCells(pieces, snap);
-  const occupied = new Set();
-  for (const cell of cells) {
-    if (cell.layer < 0 || cell.layer > MAX_LAYER) return false;
-    const key = cellKey(cell.x, cell.z, cell.layer);
-    if (occupied.has(key) || grid.has(key)) return false;
-    occupied.add(key);
-  }
+  const footed = new Set();
   for (const piece of pieces) {
-    const { w, d } = footprintOf(piece.brick);
     const layer = snap.layer + piece.dlayer;
     let supported = 0;
-    for (let x = 0; x < w; x += 1) {
-      for (let z = 0; z < d; z += 1) {
-        const cx = snap.gx + piece.dgx + x;
-        const cz = snap.gz + piece.dgz + z;
-        if (layer === 0) {
-          if (onPlate(cx, cz)) supported += 1;
-        } else if (grid.has(cellKey(cx, cz, layer - 1)) || occupied.has(cellKey(cx, cz, layer - 1))) {
-          supported += 1;
-        }
-      }
+    let feet = 0;
+    for (const cell of layoutOf(piece.brick)) {
+      if (!cell.foot) continue;
+      feet += 1;
+      const x = snap.gx + piece.dgx + cell.x;
+      const z = snap.gz + piece.dgz + cell.z;
+      const key = cellKey(x, z, layer);
+      if (footed.has(key)) continue;
+      footed.add(key);
+      const resting = layer === 0
+        ? onPlate(x, z)
+        : hasStud(grid, x, z, layer - 1) || studs.has(cellKey(x, z, layer - 1));
+      if (resting) supported += 1;
     }
-    if (supported === 0) return false;
+    if (feet > 0 && supported === 0) return false;
   }
   return true;
 }
 
-export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ) {
-  const { w, d } = footprintOf(primary);
-  const gx0 = Math.round(localX / STUD - w / 2);
-  const gz0 = Math.round(localZ / STUD - d / 2);
-  const layer0 = Math.round(localY / HEIGHT);
-  for (const layer of [layer0, layer0 + 1, layer0 - 1]) {
-    let best = null;
-    let bestDist = Infinity;
-    for (let dx = -5; dx <= 5; dx += 1) {
-      for (let dz = -5; dz <= 5; dz += 1) {
-        const snap = { gx: gx0 + dx, gz: gz0 + dz, layer };
-        if (!canPlaceAssembly(grid, pieces, snap)) continue;
-        const cx = (snap.gx + w / 2) * STUD;
-        const cz = (snap.gz + d / 2) * STUD;
-        const dist = (cx - localX) ** 2 + (cz - localZ) ** 2;
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = { ...snap, dist };
-        }
-      }
-    }
-    if (best && best.dist <= (STUD * 5) ** 2) return best;
-  }
-  return null;
-}
-
-function searchLayer(grid, gx0, gz0, w, d, layer, localX, localZ) {
+function searchLayer(grid, brick, gx0, gz0, w, d, layer, localX, localZ, reach) {
   let best = null;
   let bestDist = Infinity;
-  for (let dx = -5; dx <= 5; dx += 1) {
-    for (let dz = -5; dz <= 5; dz += 1) {
+  const span = Math.ceil(reach);
+  for (let dx = -span; dx <= span; dx += 1) {
+    for (let dz = -span; dz <= span; dz += 1) {
       const gx = gx0 + dx;
       const gz = gz0 + dz;
-      if (!canPlace(grid, gx, gz, w, d, layer)) continue;
+      if (!canPlace(grid, brick, gx, gz, layer)) continue;
       const cx = (gx + w / 2) * STUD;
       const cz = (gz + d / 2) * STUD;
       const dist = (cx - localX) ** 2 + (cz - localZ) ** 2;
@@ -173,21 +194,63 @@ function searchLayer(grid, gx0, gz0, w, d, layer, localX, localZ) {
       }
     }
   }
-  if (!best || best.dist > (STUD * 5) ** 2) return null;
+  if (!best || best.dist > (STUD * reach) ** 2) return null;
   return best;
 }
 
-export function findSnap(grid, brick, localX, localY, localZ) {
+export function findSnap(grid, brick, localX, localY, localZ, preferLayer = null) {
   const { w, d } = footprintOf(brick);
   const gx0 = Math.round(localX / STUD - w / 2);
   const gz0 = Math.round(localZ / STUD - d / 2);
-  const layer0 = Math.round(localY / HEIGHT);
-  const layers = [layer0, layer0 + 1, layer0 - 1];
-  for (const layer of layers) {
-    const snap = searchLayer(grid, gx0, gz0, w, d, layer, localX, localZ);
-    if (snap) return snap;
+  if (preferLayer != null) {
+    return searchLayer(grid, brick, gx0, gz0, w, d, preferLayer, localX, localZ, preferLayer > 0 ? 3.5 : 5);
   }
-  return null;
+  const aim = Math.max(0, Math.round(localY / HEIGHT));
+  let best = null;
+  let bestCost = Infinity;
+  for (const layer of [aim, aim + 1, Math.max(0, aim - 1)]) {
+    const snap = searchLayer(grid, brick, gx0, gz0, w, d, layer, localX, localZ, 4);
+    if (!snap) continue;
+    const vertical = layer * HEIGHT - localY;
+    const cost = snap.dist + (vertical * 4) ** 2;
+    if (cost < bestCost) {
+      bestCost = cost;
+      best = snap;
+    }
+  }
+  return best;
+}
+
+export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ, preferLayer = null) {
+  const { w, d } = footprintOf(primary);
+  const gx0 = Math.round(localX / STUD - w / 2);
+  const gz0 = Math.round(localZ / STUD - d / 2);
+  const layers = preferLayer != null
+    ? [preferLayer]
+    : [Math.max(0, Math.round(localY / HEIGHT))];
+  const reach = preferLayer != null && preferLayer > 0 ? 3.5 : 5;
+  let best = null;
+  let bestCost = Infinity;
+  for (const layer of layers) {
+    const span = Math.ceil(reach);
+    for (let dx = -span; dx <= span; dx += 1) {
+      for (let dz = -span; dz <= span; dz += 1) {
+        const snap = { gx: gx0 + dx, gz: gz0 + dz, layer };
+        if (!canPlaceAssembly(grid, pieces, snap)) continue;
+        const cx = (snap.gx + w / 2) * STUD;
+        const cz = (snap.gz + d / 2) * STUD;
+        const dist = (cx - localX) ** 2 + (cz - localZ) ** 2;
+        if (dist > (STUD * reach) ** 2) continue;
+        const vertical = layer * HEIGHT - localY;
+        const cost = dist + (vertical * 4) ** 2;
+        if (cost < bestCost) {
+          bestCost = cost;
+          best = { ...snap, dist };
+        }
+      }
+    }
+  }
+  return best;
 }
 
 export function brickLocalPosition(brick, snap) {

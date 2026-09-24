@@ -7,8 +7,8 @@ export function pedestalSlot(index) {
   const col = index % 2;
   const row = Math.floor(index / 2);
   return {
-    x: 0.88 + col * 0.34,
-    z: 0.22 - row * 0.38,
+    x: 0.76 + col * 0.3,
+    z: 0.42 - row * 0.32,
   };
 }
 
@@ -64,7 +64,7 @@ function buttonTexture(label, fill, textColor) {
     ctx.fillStyle = fill;
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = textColor;
-    ctx.font = '700 64px Segoe UI, sans-serif';
+    ctx.font = `700 ${label.length > 4 ? 46 : 64}px Segoe UI, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, w / 2, h / 2 + 2);
@@ -211,22 +211,24 @@ function createMachine(targets) {
   }
   addBox(mount, [0.98, 0.028, 0.028], [0, TABLE_TOP + 0.78, backZ], postMat);
 
+  const openPose = { x: 0, y: 1.32, z: -0.62, tilt: -0.62 };
+  const closedPose = { x: 0, y: 1.78, z: -1.18, tilt: 0.35 };
   const group = new THREE.Group();
-  group.position.set(0, 1.28, -0.68);
-  group.rotation.x = -0.58;
+  group.position.set(openPose.x, openPose.y, openPose.z);
+  group.rotation.x = openPose.tilt;
   mount.add(group);
 
   const caseMat = new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 0.55, metalness: 0.18 });
   const trimMat = new THREE.MeshStandardMaterial({ color: 0x3e4752, roughness: 0.45, metalness: 0.22 });
-  addBox(group, [0.96, 0.82, 0.02], [0, 0, 0], caseMat);
-  addBox(group, [1.0, 0.02, 0.028], [0, 0.4, 0], trimMat);
+  addBox(group, [1.04, 1.08, 0.02], [0, 0, 0], caseMat);
+  addBox(group, [1.08, 0.02, 0.028], [0, 0.53, 0], trimMat);
 
   const screen = canvasTexture(512, 256, () => {});
   const screenMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.82, 0.2),
+    new THREE.PlaneGeometry(0.86, 0.16),
     new THREE.MeshBasicMaterial({ map: screen.texture }),
   );
-  screenMesh.position.set(0, 0.24, 0.016);
+  screenMesh.position.set(0, 0.34, 0.016);
   group.add(screenMesh);
 
   const colorButtons = COLORS.map((color, index) => {
@@ -241,7 +243,7 @@ function createMachine(targets) {
         emissiveIntensity: 0.18,
       }),
     );
-    mesh.position.set(-0.27 + col * 0.18, 0.06 - row * 0.1, 0.02);
+    mesh.position.set(-0.27 + col * 0.18, 0.18 - row * 0.1, 0.02);
     mesh.userData = { type: 'ui', action: 'color', value: color.id };
     mesh.castShadow = true;
     group.add(mesh);
@@ -250,16 +252,18 @@ function createMachine(targets) {
   });
 
   const shapeButtons = SHAPES.map((shape, index) => {
+    const col = index % 5;
+    const row = Math.floor(index / 5);
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.086, 0.058, 0.016),
+      new THREE.BoxGeometry(0.15, 0.055, 0.016),
       new THREE.MeshStandardMaterial({
-        map: buttonTexture(shape.name, '#243038', '#f4f7f8'),
+        map: buttonTexture(shape.button || shape.name, '#243038', '#f4f7f8'),
         roughness: 0.5,
         emissive: 0x8fd0ff,
         emissiveIntensity: 0,
       }),
     );
-    mesh.position.set(-0.3 + index * 0.2, -0.18, 0.02);
+    mesh.position.set(-0.36 + col * 0.18, -0.04 - row * 0.09, 0.02);
     mesh.userData = { type: 'ui', action: 'shape', value: shape.id };
     mesh.castShadow = true;
     group.add(mesh);
@@ -276,7 +280,7 @@ function createMachine(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  orderButton.position.set(-0.2, -0.3, 0.022);
+  orderButton.position.set(-0.22, -0.36, 0.022);
   orderButton.userData = { type: 'ui', action: 'order' };
   orderButton.castShadow = true;
   group.add(orderButton);
@@ -286,7 +290,7 @@ function createMachine(targets) {
     new THREE.BoxGeometry(0.36, 0.07, 0.02),
     new THREE.MeshStandardMaterial({ color: 0x1c242c, roughness: 0.55 }),
   );
-  pegTrack.position.set(0.22, -0.3, 0.02);
+  pegTrack.position.set(0.24, -0.36, 0.02);
   pegTrack.userData = { type: 'ui', action: 'peg' };
   group.add(pegTrack);
   targets.push(pegTrack);
@@ -333,6 +337,62 @@ function createMachine(targets) {
     texture.needsUpdate = true;
   }
 
+  const hideButton = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.05, 0.016),
+    new THREE.MeshStandardMaterial({
+      map: buttonTexture('HIDE', '#3a4652', '#f4f7f8'),
+      roughness: 0.5,
+    }),
+  );
+  hideButton.position.set(0.4, 0.46, 0.02);
+  hideButton.userData = { type: 'ui', action: 'screen' };
+  group.add(hideButton);
+  targets.push(hideButton);
+
+  const tab = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.07, 0.02),
+    new THREE.MeshStandardMaterial({
+      map: buttonTexture('PARTS', '#1f7a45', '#f4fff7'),
+      roughness: 0.45,
+      emissive: 0x1f7a45,
+      emissiveIntensity: 0.2,
+    }),
+  );
+  tab.position.set(0, TABLE_TOP + 0.58, backZ + 0.08);
+  tab.userData = { type: 'ui', action: 'screen' };
+  tab.visible = false;
+  mount.add(tab);
+  targets.push(tab);
+
+  let openAmount = 1;
+  let openTarget = 1;
+
+  function applyScreenPose() {
+    group.position.set(
+      openPose.x,
+      closedPose.y + (openPose.y - closedPose.y) * openAmount,
+      closedPose.z + (openPose.z - closedPose.z) * openAmount,
+    );
+    group.rotation.x = closedPose.tilt + (openPose.tilt - closedPose.tilt) * openAmount;
+    const showing = openAmount > 0.08;
+    group.visible = showing;
+    tab.visible = openAmount < 0.92;
+  }
+
+  function toggleScreen() {
+    openTarget = openTarget > 0.5 ? 0 : 1;
+    return openTarget > 0.5;
+  }
+
+  function update(dt) {
+    const step = Math.min(1, dt * 4);
+    openAmount += (openTarget - openAmount) * step;
+    if (Math.abs(openTarget - openAmount) < 0.001) openAmount = openTarget;
+    applyScreenPose();
+  }
+
+  applyScreenPose();
+
   function refreshSelection(colorId, shapeId) {
     for (const button of colorButtons) {
       const selected = button.userData.value === colorId;
@@ -345,7 +405,7 @@ function createMachine(targets) {
     }
   }
 
-  return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob };
+  return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob, toggleScreen, update };
 }
 
 export function createPedestal(index, label) {

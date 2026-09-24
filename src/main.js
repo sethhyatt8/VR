@@ -4,7 +4,7 @@ import { XRButton } from 'three/addons/webxr/XRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { createBrick, makeGhost, setBrickRaycast } from './bricks.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD } from './config.js';
-import { brickLocalPosition, canPlaceAssembly, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release } from './grid.js';
+import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release } from './grid.js';
 import { createPedestal, createWorld } from './world.js';
 
 const statusEl = document.getElementById('status');
@@ -65,6 +65,7 @@ let hasAim = false;
 const yawQuat = new THREE.Quaternion();
 const yawEuler = new THREE.Euler();
 const lastAim = new THREE.Vector3();
+let aimLayer = null;
 
 machine.refreshSelection(selection.colorId, selection.shapeId);
 paintSelection('Press ORDER to dispense');
@@ -167,16 +168,42 @@ function hitFromController(controller) {
   return hitTest(worldPoint, tmpDir);
 }
 
+function raiseOnto(point, brick, layer) {
+  const base = new THREE.Vector3();
+  const scale = new THREE.Vector3();
+  brick.getWorldPosition(base);
+  brick.getWorldScale(scale);
+  point.y = base.y + HEIGHT * scale.y;
+  aimLayer = layer + 1;
+  return point;
+}
+
+function stackAt(point) {
+  localPoint.copy(point);
+  gridGroup.worldToLocal(localPoint);
+  const top = columnTop(grid, Math.floor(localPoint.x / STUD), Math.floor(localPoint.z / STUD));
+  if (!top) {
+    aimLayer = 0;
+    return point;
+  }
+  return raiseOnto(point, top.brick, top.layer);
+}
+
 function placementPoint() {
+  aimLayer = null;
   const hits = raycaster.intersectObjects(targets, true);
   for (const hit of hits) {
     const owner = ownerOf(hit.object);
     if (!owner || owner === held || owner.userData.type === 'ghost') continue;
     if (owner.userData.type === 'ui') continue;
-    if (owner.userData.type === 'plate' || owner.userData.type === 'brick') return hit.point.clone();
+    if (owner.userData.type === 'brick' && owner.userData.role === 'placed' && owner.userData.anchor) {
+      return raiseOnto(hit.point.clone(), owner, owner.userData.anchor.layer);
+    }
+    if (owner.userData.type === 'plate') return stackAt(hit.point.clone());
   }
   const point = new THREE.Vector3();
-  return raycaster.ray.intersectPlane(buildPlane, point) ? point : null;
+  if (!raycaster.ray.intersectPlane(buildPlane, point)) return null;
+  return stackAt(point);
 }
 
 function selectColor(colorId) {
@@ -197,6 +224,10 @@ function activateUi(owner) {
   if (owner.userData.action === 'color') selectColor(owner.userData.value);
   else if (owner.userData.action === 'shape') selectShape(owner.userData.value);
   else if (owner.userData.action === 'order') orderSelection();
+  else if (owner.userData.action === 'screen') {
+    const open = machine.toggleScreen();
+    setStatus(open ? 'Order screen is down.' : 'Order screen is tucked away. Press PARTS to bring it back.');
+  }
 }
 
 function orderSelection() {
@@ -598,17 +629,17 @@ function updateSnapFromPoint(point) {
   if (!heldFrom) followAim(point);
   localPoint.copy(point);
   gridGroup.worldToLocal(localPoint);
-  const margin = STUD * 8;
+  const margin = STUD * 2;
   const nearBuild = localPoint.x > -margin && localPoint.z > -margin
     && localPoint.x < GRID_X * STUD + margin && localPoint.z < GRID_Z * STUD + margin;
   if (assembly) {
     held.userData.snap = nearBuild
-      ? findAssemblySnap(grid, assembly.pieces, held, localPoint.x, localPoint.y, localPoint.z)
+      ? findAssemblySnap(grid, assembly.pieces, held, localPoint.x, localPoint.y, localPoint.z, aimLayer)
       : null;
     return;
   }
   if (heldFrom) held.userData.rot = quarterTurns(held);
-  const snap = nearBuild ? findSnap(grid, held, localPoint.x, localPoint.y, localPoint.z) : null;
+  const snap = nearBuild ? findSnap(grid, held, localPoint.x, localPoint.y, localPoint.z, aimLayer) : null;
   held.userData.snap = snap;
   showGhost(snap);
 }
@@ -821,6 +852,7 @@ function frame() {
     jobs[i].update(k);
     if (k >= 1) jobs.splice(i, 1);
   }
+  machine.update(dt);
   if (!renderer.xr.isPresenting) controls.update();
   else {
     for (const controller of controllers) {

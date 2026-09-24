@@ -22,8 +22,14 @@ export const COLORS = [
 export const SHAPES = [
   { id: '1x1', name: '1×1', w: 1, d: 1 },
   { id: '1x2', name: '1×2', w: 1, d: 2 },
+  { id: '1x3', name: '1×3', w: 1, d: 3 },
+  { id: '1x4', name: '1×4', w: 1, d: 4 },
   { id: '2x2', name: '2×2', w: 2, d: 2 },
+  { id: '2x3', name: '2×3', w: 2, d: 3 },
   { id: '2x4', name: '2×4', w: 2, d: 4 },
+  { id: 'slope12', name: 'Slope 1×2', button: 'S 1×2', w: 1, d: 2, kind: 'slope' },
+  { id: 'slope22', name: 'Slope 2×2', button: 'S 2×2', w: 2, d: 2, kind: 'slope' },
+  { id: 'wall22', name: '45° Wall', button: '45°', w: 2, d: 2, kind: 'wall' },
 ];
 
 export function colorById(id) {
