@@ -176,81 +176,47 @@ export function canPlaceAssembly(grid, pieces, snap) {
   return true;
 }
 
-function searchLayer(grid, brick, gx0, gz0, w, d, layer, localX, localZ, reach) {
-  let best = null;
-  let bestDist = Infinity;
-  const span = Math.ceil(reach);
-  for (let dx = -span; dx <= span; dx += 1) {
-    for (let dz = -span; dz <= span; dz += 1) {
-      const gx = gx0 + dx;
-      const gz = gz0 + dz;
-      if (!canPlace(grid, brick, gx, gz, layer)) continue;
-      const cx = (gx + w / 2) * STUD;
-      const cz = (gz + d / 2) * STUD;
-      const dist = (cx - localX) ** 2 + (cz - localZ) ** 2;
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = { gx, gz, layer, dist };
-      }
-    }
-  }
-  if (!best || best.dist > (STUD * reach) ** 2) return null;
-  return best;
-}
+const SNAP_STUDS = 1.6;
 
-export function findSnap(grid, brick, localX, localY, localZ, preferLayer = null) {
-  const { w, d } = footprintOf(brick);
+function closestSnap(localX, localY, localZ, w, d, aim, accept) {
   const gx0 = Math.round(localX / STUD - w / 2);
   const gz0 = Math.round(localZ / STUD - d / 2);
-  if (preferLayer != null) {
-    return searchLayer(grid, brick, gx0, gz0, w, d, preferLayer, localX, localZ, preferLayer > 0 ? 3.5 : 5);
-  }
-  const aim = Math.max(0, Math.round(localY / HEIGHT));
+  const limit = (STUD * SNAP_STUDS) ** 2;
   let best = null;
-  let bestCost = Infinity;
-  for (const layer of [aim, aim + 1, Math.max(0, aim - 1)]) {
-    const snap = searchLayer(grid, brick, gx0, gz0, w, d, layer, localX, localZ, 4);
-    if (!snap) continue;
-    const vertical = layer * HEIGHT - localY;
-    const cost = snap.dist + (vertical * 4) ** 2;
-    if (cost < bestCost) {
-      bestCost = cost;
-      best = snap;
-    }
-  }
-  return best;
-}
-
-export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ, preferLayer = null) {
-  const { w, d } = footprintOf(primary);
-  const gx0 = Math.round(localX / STUD - w / 2);
-  const gz0 = Math.round(localZ / STUD - d / 2);
-  const layers = preferLayer != null
-    ? [preferLayer]
-    : [Math.max(0, Math.round(localY / HEIGHT))];
-  const reach = preferLayer != null && preferLayer > 0 ? 3.5 : 5;
-  let best = null;
-  let bestCost = Infinity;
-  for (const layer of layers) {
-    const span = Math.ceil(reach);
+  let bestDist = limit;
+  const span = Math.ceil(SNAP_STUDS);
+  for (let layer = Math.max(0, aim - 1); layer <= aim + 1; layer += 1) {
     for (let dx = -span; dx <= span; dx += 1) {
       for (let dz = -span; dz <= span; dz += 1) {
-        const snap = { gx: gx0 + dx, gz: gz0 + dz, layer };
-        if (!canPlaceAssembly(grid, pieces, snap)) continue;
-        const cx = (snap.gx + w / 2) * STUD;
-        const cz = (snap.gz + d / 2) * STUD;
-        const dist = (cx - localX) ** 2 + (cz - localZ) ** 2;
-        if (dist > (STUD * reach) ** 2) continue;
-        const vertical = layer * HEIGHT - localY;
-        const cost = dist + (vertical * 4) ** 2;
-        if (cost < bestCost) {
-          bestCost = cost;
-          best = { ...snap, dist };
+        const gx = gx0 + dx;
+        const gz = gz0 + dz;
+        if (!accept(gx, gz, layer)) continue;
+        const cx = (gx + w / 2) * STUD;
+        const cz = (gz + d / 2) * STUD;
+        const cy = layer * HEIGHT;
+        const dist = (cx - localX) ** 2 + (cz - localZ) ** 2 + (cy - localY) ** 2;
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = { gx, gz, layer, dist };
         }
       }
     }
   }
   return best;
+}
+
+export function findSnap(grid, brick, localX, localY, localZ) {
+  const { w, d } = footprintOf(brick);
+  const aim = Math.max(0, Math.round(localY / HEIGHT));
+  return closestSnap(localX, localY, localZ, w, d, aim, (gx, gz, layer) => canPlace(grid, brick, gx, gz, layer));
+}
+
+export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ) {
+  const { w, d } = footprintOf(primary);
+  const aim = Math.max(0, Math.round(localY / HEIGHT));
+  return closestSnap(localX, localY, localZ, w, d, aim, (gx, gz, layer) => (
+    canPlaceAssembly(grid, pieces, { gx, gz, layer })
+  ));
 }
 
 export function brickLocalPosition(brick, snap) {

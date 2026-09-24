@@ -31,80 +31,50 @@ function geometryFor(w, d) {
   return geometry;
 }
 
-function pushFace(positions, normals, a, b, c) {
-  positions.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
-  const ux = b[0] - a[0];
-  const uy = b[1] - a[1];
-  const uz = b[2] - a[2];
-  const vx = c[0] - a[0];
-  const vy = c[1] - a[1];
-  const vz = c[2] - a[2];
-  let nx = uy * vz - uz * vy;
-  let ny = uz * vx - ux * vz;
-  let nz = ux * vy - uy * vx;
-  const len = Math.hypot(nx, ny, nz) || 1;
-  nx /= len;
-  ny /= len;
-  nz /= len;
-  normals.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
-}
-
-function pushQuad(positions, normals, a, b, c, d) {
-  pushFace(positions, normals, a, b, c);
-  pushFace(positions, normals, a, c, d);
-}
-
-function geometryFrom(positions, normals) {
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+function extrudedProfile(key, width, build) {
+  let geometry = bodyGeometry.get(key);
+  if (geometry) return geometry;
+  const shape = new THREE.Shape();
+  build(shape);
+  geometry = new THREE.ExtrudeGeometry(shape, { depth: width, bevelEnabled: false, steps: 1 });
+  geometry.translate(0, 0, -width / 2);
+  geometry.rotateY(-Math.PI / 2);
+  geometry.translate(width / 2, 0, 0);
+  geometry.computeVertexNormals();
+  bodyGeometry.set(key, geometry);
   return geometry;
 }
 
 function slopeGeometry(w, d) {
-  const key = `slope${w}x${d}`;
-  let geometry = bodyGeometry.get(key);
-  if (geometry) return geometry;
-  const x0 = -(w * STUD - GAP) / 2;
-  const x1 = -x0;
-  const z0 = -(d * STUD - GAP) / 2;
-  const z1 = -z0;
+  const width = w * STUD - GAP;
+  const depth = d * STUD - GAP;
   const hy = HEIGHT - STUD_H;
-  const knee = Math.max(z0, z1 - hy);
-  const positions = [];
-  const normals = [];
-  pushQuad(positions, normals, [x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0, 0, z0]);
-  pushQuad(positions, normals, [x0, 0, z1], [x0, hy, z1], [x1, hy, z1], [x1, 0, z1]);
-  pushQuad(positions, normals, [x0, hy, knee], [x0, hy, z1], [x1, hy, z1], [x1, hy, knee]);
-  pushQuad(positions, normals, [x0, 0, z0], [x1, 0, z0], [x1, hy, knee], [x0, hy, knee]);
-  pushQuad(positions, normals, [x0, 0, z0], [x0, hy, knee], [x0, hy, z1], [x0, 0, z1]);
-  pushQuad(positions, normals, [x1, 0, z1], [x1, hy, z1], [x1, hy, knee], [x1, 0, z0]);
-  geometry = geometryFrom(positions, normals);
-  bodyGeometry.set(key, geometry);
-  return geometry;
+  const z0 = -depth / 2;
+  const z1 = depth / 2;
+  const knee = Math.max(z0 + 0.004, z1 - hy);
+  return extrudedProfile(`slope${w}x${d}`, width, (shape) => {
+    shape.moveTo(z0, 0);
+    shape.lineTo(z1, 0);
+    shape.lineTo(z1, hy);
+    shape.lineTo(knee, hy);
+    shape.lineTo(z0, 0);
+  });
 }
 
 function wallGeometry(w, d) {
-  const key = `wall${w}x${d}`;
-  let geometry = bodyGeometry.get(key);
-  if (geometry) return geometry;
-  const x0 = -(w * STUD - GAP) / 2;
-  const x1 = -x0;
-  const z0 = -(d * STUD - GAP) / 2;
-  const z1 = -z0;
+  const width = w * STUD - GAP;
+  const depth = d * STUD - GAP;
   const hy = HEIGHT - STUD_H;
-  const knee = Math.max(z0, z1 - hy);
-  const positions = [];
-  const normals = [];
-  pushQuad(positions, normals, [x0, 0, knee], [x1, 0, knee], [x1, 0, z0], [x0, 0, z0]);
-  pushQuad(positions, normals, [x0, hy, z0], [x1, hy, z0], [x1, hy, z1], [x0, hy, z1]);
-  pushQuad(positions, normals, [x0, 0, z0], [x1, 0, z0], [x1, hy, z0], [x0, hy, z0]);
-  pushQuad(positions, normals, [x0, 0, knee], [x0, hy, z1], [x1, hy, z1], [x1, 0, knee]);
-  pushQuad(positions, normals, [x0, 0, z0], [x0, hy, z0], [x0, hy, z1], [x0, 0, knee]);
-  pushQuad(positions, normals, [x1, 0, knee], [x1, hy, z1], [x1, hy, z0], [x1, 0, z0]);
-  geometry = geometryFrom(positions, normals);
-  bodyGeometry.set(key, geometry);
-  return geometry;
+  const z0 = -depth / 2;
+  const z1 = depth / 2;
+  const knee = Math.max(z0 + 0.004, z1 - hy);
+  return extrudedProfile(`wall${w}x${d}`, width, (shape) => {
+    shape.moveTo(z0, 0);
+    shape.lineTo(knee, 0);
+    shape.lineTo(z1, hy);
+    shape.lineTo(z0, hy);
+    shape.closePath();
+  });
 }
 
 export function createBrick(shape, color) {

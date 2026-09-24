@@ -125,6 +125,69 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
+let audioCtx = null;
+
+function audio() {
+  if (!audioCtx) audioCtx = new AudioContext();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function envGain(ctx, start, peak, attack, release) {
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(peak, start + attack);
+  gain.gain.exponentialRampToValueAtTime(0.0001, start + attack + release);
+  gain.connect(ctx.destination);
+  return gain;
+}
+
+function playDispense() {
+  const ctx = audio();
+  const t = ctx.currentTime;
+  const noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.09), ctx.sampleRate);
+  const data = noise.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+  const burst = ctx.createBufferSource();
+  burst.buffer = noise;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(420, t);
+  filter.frequency.exponentialRampToValueAtTime(1400, t + 0.08);
+  const noiseGain = envGain(ctx, t, 0.16, 0.01, 0.08);
+  burst.connect(filter);
+  filter.connect(noiseGain);
+  burst.start(t);
+  burst.stop(t + 0.09);
+
+  const whir = ctx.createOscillator();
+  whir.type = 'triangle';
+  whir.frequency.setValueAtTime(180, t);
+  whir.frequency.exponentialRampToValueAtTime(720, t + 0.22);
+  whir.connect(envGain(ctx, t, 0.07, 0.03, 0.24));
+  whir.start(t);
+  whir.stop(t + 0.28);
+
+  const chime = ctx.createOscillator();
+  chime.type = 'sine';
+  chime.frequency.value = 988;
+  chime.connect(envGain(ctx, t + 0.16, 0.09, 0.02, 0.34));
+  chime.start(t + 0.16);
+  chime.stop(t + 0.54);
+}
+
+function playSnap() {
+  const ctx = audio();
+  const t = ctx.currentTime;
+  const click = ctx.createOscillator();
+  click.type = 'triangle';
+  click.frequency.setValueAtTime(1800, t);
+  click.frequency.exponentialRampToValueAtTime(640, t + 0.035);
+  click.connect(envGain(ctx, t, 0.045, 0.004, 0.04));
+  click.start(t);
+  click.stop(t + 0.05);
+}
+
 function paintSelection(detail) {
   const color = colorById(selection.colorId);
   const shape = shapeById(selection.shapeId);
@@ -245,6 +308,7 @@ function orderSelection() {
   }
   const pedestal = spawnPedestal(selection.colorId, selection.shapeId);
   const label = partLabel(selection.colorId, selection.shapeId);
+  playDispense();
   paintSelection('Dispensed');
   setStatus(`${label} is on a pedestal.`);
   return pedestal;
@@ -525,6 +589,7 @@ function placeAssembly() {
     targets.push(piece.brick);
   }
   carry.parent?.remove(carry);
+  playSnap();
   setStatus(`Placed ${count} bricks.`);
   return true;
 }
@@ -553,6 +618,7 @@ function placeSingle() {
     const pedestal = pedestals.find((item) => item.id === home.pedestalId);
     if (pedestal && !pedestal.supply) refill(pedestal, true);
   }
+  playSnap();
   setStatus(`Placed ${partLabel(brick.userData.colorId, brick.userData.shapeId)}.`);
   return true;
 }
@@ -659,17 +725,17 @@ function updateSnapFromPoint(point) {
   if (!heldFrom) followAim(point);
   localPoint.copy(point);
   gridGroup.worldToLocal(localPoint);
-  const margin = STUD * 2;
+  const margin = STUD * 3;
   const nearBuild = localPoint.x > -margin && localPoint.z > -margin
     && localPoint.x < GRID_X * STUD + margin && localPoint.z < GRID_Z * STUD + margin;
   if (assembly) {
     held.userData.snap = nearBuild
-      ? findAssemblySnap(grid, assembly.pieces, held, localPoint.x, localPoint.y, localPoint.z, aimLayer)
+      ? findAssemblySnap(grid, assembly.pieces, held, localPoint.x, localPoint.y, localPoint.z)
       : null;
     return;
   }
   if (heldFrom) held.userData.rot = quarterTurns(held);
-  const snap = nearBuild ? findSnap(grid, held, localPoint.x, localPoint.y, localPoint.z, aimLayer) : null;
+  const snap = nearBuild ? findSnap(grid, held, localPoint.x, localPoint.y, localPoint.z) : null;
   held.userData.snap = snap;
   showGhost(snap);
 }
@@ -838,21 +904,19 @@ function onXrSelect(controller) {
   if (target) grab(target, controller, gripHeld(controller));
 }
 
+function piecePoint() {
+  const target = assembly ? assembly.carry : held;
+  target.getWorldPosition(worldPoint);
+  return worldPoint;
+}
+
 function onXrRelease(controller) {
   if (controller.userData.pegDrag) {
     controller.userData.pegDrag = false;
     return;
   }
   if (!held || heldFrom !== controller) return;
-  controller.getWorldPosition(worldPoint);
-  tmpDir.set(0, 0, -1).applyQuaternion(controller.quaternion);
-  raycaster.set(worldPoint, tmpDir);
-  const aim = placementPoint();
-  if (aim) updateSnapFromPoint(aim);
-  else {
-    held.getWorldPosition(worldPoint);
-    updateSnapFromPoint(worldPoint);
-  }
+  updateSnapFromPoint(piecePoint());
   releaseHeld();
 }
 
@@ -870,15 +934,7 @@ function pollRotate(controller) {
 
 function updateHeldXr() {
   if (!held || !heldFrom) return;
-  heldFrom.getWorldPosition(worldPoint);
-  tmpDir.set(0, 0, -1).applyQuaternion(heldFrom.quaternion);
-  raycaster.set(worldPoint, tmpDir);
-  const aim = placementPoint();
-  if (aim) updateSnapFromPoint(aim);
-  else {
-    held.getWorldPosition(worldPoint);
-    updateSnapFromPoint(worldPoint);
-  }
+  updateSnapFromPoint(piecePoint());
 }
 
 function frame() {
