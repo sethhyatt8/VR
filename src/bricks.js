@@ -92,17 +92,25 @@ function cellCenter(ix, iz, w, d) {
   };
 }
 
-function addRoundHole(shape, x, z) {
-  const hole = new THREE.Path();
-  hole.absarc(x, -z, HOLE_R, 0, Math.PI * 2, true);
-  shape.holes.push(hole);
+function rectPlate(x0, z0, x1, z1, holes) {
+  const shape = new THREE.Shape();
+  shape.moveTo(x0, -z1);
+  shape.lineTo(x1, -z1);
+  shape.lineTo(x1, -z0);
+  shape.lineTo(x0, -z0);
+  shape.closePath();
+  for (const hole of holes) {
+    const path = new THREE.Path();
+    path.absarc(hole.x, -hole.z, hole.r, 0, Math.PI * 2, true);
+    shape.holes.push(path);
+  }
+  return extrudeUp(shape, STUD_H);
 }
 
-function socketPlate(width, depth, centerX, centerZ, holes) {
-  const shape = new THREE.Shape();
-  roundedRect(shape, centerX - width / 2, -(centerZ + depth / 2), width, depth, 0.0025);
-  for (const hole of holes) addRoundHole(shape, hole.x, hole.z);
-  return extrudeUp(shape, STUD_H);
+function holeRadius(cz, zLimit) {
+  const room = cz - zLimit - 0.001;
+  if (room < STUD * 0.3) return 0;
+  return Math.min(HOLE_R, room);
 }
 
 function slopeGeometry(w, d) {
@@ -113,21 +121,33 @@ function slopeGeometry(w, d) {
   const depth = d * STUD - GAP;
   const z0 = -depth / 2;
   const z1 = depth / 2;
-  const rise = HEIGHT - STUD_H;
-  const knee = Math.max(z0 + 0.004, z1 - rise);
+  const knee = cellCenter(0, d - 1, w, d).z - STUD / 2;
+  const zA = z0 + (knee - z0) * (STUD_H / HEIGHT);
   const holes = [];
   for (let x = 0; x < w; x += 1) {
-    for (let z = 0; z < d; z += 1) holes.push(cellCenter(x, z, w, d));
+    for (let z = 0; z < d; z += 1) {
+      const center = cellCenter(x, z, w, d);
+      const radius = holeRadius(center.z, zA);
+      if (radius > 0) holes.push({ ...center, r: radius });
+    }
   }
-  const plate = socketPlate(width, depth, 0, 0, holes);
-  const upper = profileGeometry(width, (shape) => {
-    shape.moveTo(z0, STUD_H);
-    shape.lineTo(z1, STUD_H);
-    shape.lineTo(z1, HEIGHT);
-    shape.lineTo(knee, HEIGHT);
-    shape.lineTo(z0, STUD_H);
-  });
-  geometry = mergeGeometries([plate, upper]);
+  const parts = [
+    profileGeometry(width, (shape) => {
+      shape.moveTo(z0, 0);
+      shape.lineTo(zA, 0);
+      shape.lineTo(zA, STUD_H);
+      shape.lineTo(z0, 0);
+    }),
+    rectPlate(-width / 2, zA, width / 2, z1, holes),
+    profileGeometry(width, (shape) => {
+      shape.moveTo(zA, STUD_H);
+      shape.lineTo(z1, STUD_H);
+      shape.lineTo(z1, HEIGHT);
+      shape.lineTo(knee, HEIGHT);
+      shape.lineTo(zA, STUD_H);
+    }),
+  ];
+  geometry = mergeGeometries(parts);
   geometry.computeVertexNormals();
   bodyGeometry.set(key, geometry);
   return geometry;
@@ -139,21 +159,32 @@ function wallGeometry(w, d) {
   if (geometry) return geometry;
   const width = w * STUD - GAP;
   const depth = d * STUD - GAP;
+  const z0 = -depth / 2;
   const z1 = depth / 2;
-  const soleDepth = STUD - GAP;
-  const soleZ = cellCenter(0, 0, w, d).z;
-  const soleFront = soleZ + soleDepth / 2;
+  const knee = cellCenter(0, 0, w, d).z + STUD / 2;
   const holes = [];
-  for (let x = 0; x < w; x += 1) holes.push(cellCenter(x, 0, w, d));
-  const plate = socketPlate(width, soleDepth, 0, soleZ, holes);
-  const upper = profileGeometry(width, (shape) => {
-    shape.moveTo(-depth / 2, STUD_H);
-    shape.lineTo(soleFront, STUD_H);
-    shape.lineTo(z1, HEIGHT);
-    shape.lineTo(-depth / 2, HEIGHT);
-    shape.closePath();
-  });
-  geometry = mergeGeometries([plate, upper]);
+  for (let x = 0; x < w; x += 1) {
+    const center = cellCenter(x, 0, w, d);
+    const radius = holeRadius(knee - 0.001, center.z);
+    if (radius > 0) holes.push({ ...center, r: radius });
+  }
+  const parts = [
+    rectPlate(-width / 2, z0, width / 2, knee, holes),
+    profileGeometry(width, (shape) => {
+      shape.moveTo(z0, STUD_H);
+      shape.lineTo(knee, STUD_H);
+      shape.lineTo(knee, HEIGHT);
+      shape.lineTo(z0, HEIGHT);
+      shape.closePath();
+    }),
+    profileGeometry(width, (shape) => {
+      shape.moveTo(knee, 0);
+      shape.lineTo(z1, HEIGHT);
+      shape.lineTo(knee, HEIGHT);
+      shape.closePath();
+    }),
+  ];
+  geometry = mergeGeometries(parts);
   geometry.computeVertexNormals();
   bodyGeometry.set(key, geometry);
   return geometry;

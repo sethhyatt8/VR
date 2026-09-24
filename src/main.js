@@ -416,10 +416,11 @@ function surfaceGap(brick, world) {
   brick.updateWorldMatrix(true, false);
   localGrab.copy(world);
   brick.worldToLocal(localGrab);
-  const { w, d } = footprintOf(brick);
-  const dx = localGrab.x - THREE.MathUtils.clamp(localGrab.x, -w * STUD * 0.5, w * STUD * 0.5);
+  const hx = brick.userData.baseW * STUD * 0.5;
+  const hz = brick.userData.baseD * STUD * 0.5;
+  const dx = localGrab.x - THREE.MathUtils.clamp(localGrab.x, -hx, hx);
   const dy = localGrab.y - THREE.MathUtils.clamp(localGrab.y, 0, HEIGHT + STUD_H);
-  const dz = localGrab.z - THREE.MathUtils.clamp(localGrab.z, -d * STUD * 0.5, d * STUD * 0.5);
+  const dz = localGrab.z - THREE.MathUtils.clamp(localGrab.z, -hz, hz);
   brick.getWorldScale(scalePoint);
   return Math.hypot(dx, dy, dz) * scalePoint.x;
 }
@@ -433,9 +434,11 @@ function handPoints(controller) {
   if (grip) points.push(grip.getWorldPosition(new THREE.Vector3()));
   const side = new THREE.Vector3(1, 0, 0).applyQuaternion(yawQuat);
   const down = new THREE.Vector3(0, -1, 0).applyQuaternion(yawQuat);
-  points.push(handPoint.clone().addScaledVector(side, 0.07));
-  points.push(handPoint.clone().addScaledVector(side, -0.07));
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(yawQuat);
+  points.push(handPoint.clone().addScaledVector(side, 0.08));
+  points.push(handPoint.clone().addScaledVector(side, -0.08));
   points.push(handPoint.clone().addScaledVector(down, 0.06));
+  points.push(handPoint.clone().addScaledVector(forward, 0.1));
   return points;
 }
 
@@ -455,7 +458,7 @@ function closestBrickToHand(points) {
 
 function closestBrickToRay(origin, forward) {
   let best = null;
-  let bestDist = 0.08;
+  let bestDist = 0.12;
   const sample = new THREE.Vector3();
   for (let distance = 0.04; distance <= 0.9; distance += 0.06) {
     sample.copy(origin).addScaledVector(forward, distance);
@@ -496,7 +499,6 @@ function grabOne(brick, holder) {
   assembly = null;
   brick.userData.role = 'held';
   brick.userData.snap = null;
-  brick.userData.yawOffset = 0;
   brick.scale.setScalar(1);
   const index = targets.indexOf(brick);
   if (index >= 0) targets.splice(index, 1);
@@ -505,7 +507,6 @@ function grabOne(brick, holder) {
   if (holder) {
     holder.attach(brick);
     brick.position.set(0, -0.02, -0.14);
-    brick.rotation.set(0, 0, 0);
   } else {
     scene.attach(brick);
     brick.rotation.set(0, brick.userData.rot * Math.PI / 2, 0);
@@ -550,7 +551,6 @@ function grabAssembly(bricks, primary, holder) {
   if (holder) {
     holder.attach(carry);
     carry.position.set(0, -0.04, -0.28);
-    carry.rotation.set(0, 0, 0);
   }
   held = primary;
   heldFrom = holder;
@@ -595,8 +595,7 @@ function rotateHeld() {
   if (!held) return;
   if (assembly) rotateAssembly();
   else if (heldFrom) {
-    held.userData.yawOffset = ((held.userData.yawOffset || 0) + 1) % 4;
-    held.rotation.set(0, held.userData.yawOffset * Math.PI / 2, 0);
+    held.rotation.y += Math.PI / 2;
   } else {
     held.userData.rot = (held.userData.rot + 1) % 4;
     held.rotation.set(0, held.userData.rot * Math.PI / 2, 0);
