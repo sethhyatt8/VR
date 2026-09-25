@@ -210,15 +210,9 @@ export function createWorld() {
 
 function createMachine(targets) {
   const mount = new THREE.Group();
-  const postMat = new THREE.MeshStandardMaterial({ color: 0x3e4752, roughness: 0.45, metalness: 0.22 });
-  const backZ = -0.55 - (GRID_Z * STUD) / 2 - 0.06;
-  for (const x of [-0.46, 0.46]) {
-    addBox(mount, [0.028, 0.78, 0.028], [x, TABLE_TOP + 0.39, backZ], postMat);
-  }
-  addBox(mount, [0.98, 0.028, 0.028], [0, TABLE_TOP + 0.78, backZ], postMat);
 
-  const openPose = { x: 0, y: 1.32, z: -0.62, tilt: -0.62 };
-  const closedPose = { x: 0, y: 1.78, z: -1.18, tilt: 0.35 };
+  const openPose = { x: -0.95, y: 1.42, z: -0.55, tilt: -0.12, yaw: 0.28 };
+  const closedPose = { x: -1.05, y: 1.7, z: -0.7, tilt: 0.15, yaw: 0.55 };
   const group = new THREE.Group();
   group.position.set(openPose.x, openPose.y, openPose.z);
   group.rotation.x = openPose.tilt;
@@ -397,7 +391,7 @@ function createMachine(targets) {
       emissiveIntensity: 0.2,
     }),
   );
-  tab.position.set(0, TABLE_TOP + 0.58, backZ + 0.08);
+  tab.position.set(-0.95, 1.02, 0.46);
   tab.userData = { type: 'ui', action: 'screen' };
   tab.visible = false;
   mount.add(tab);
@@ -408,14 +402,23 @@ function createMachine(targets) {
 
   function applyScreenPose() {
     group.position.set(
-      openPose.x,
+      closedPose.x + (openPose.x - closedPose.x) * openAmount,
       closedPose.y + (openPose.y - closedPose.y) * openAmount,
       closedPose.z + (openPose.z - closedPose.z) * openAmount,
     );
     group.rotation.x = closedPose.tilt + (openPose.tilt - closedPose.tilt) * openAmount;
-    const showing = openAmount > 0.08;
-    group.visible = showing;
+    group.rotation.y = closedPose.yaw + (openPose.yaw - closedPose.yaw) * openAmount;
+    group.visible = openAmount > 0.08;
     tab.visible = openAmount < 0.92;
+  }
+
+  function placeScreen(scale) {
+    const side = (GRID_X * STUD * scale + 0.16) / 2;
+    const x = -(side + 0.36);
+    openPose.x = x;
+    closedPose.x = x;
+    tab.position.set(x + 0.28, 1.02, 0.48);
+    applyScreenPose();
   }
 
   function toggleScreen() {
@@ -448,7 +451,9 @@ function createMachine(targets) {
     flatButton.material.emissiveIntensity = selection.flat ? 0.35 : 0;
   }
 
-  return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob, toggleScreen, update };
+  placeScreen(1);
+
+  return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob, toggleScreen, update, placeScreen };
 }
 
 export function createChallengeStand(targets) {
@@ -457,14 +462,14 @@ export function createChallengeStand(targets) {
 
   const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a34, roughness: 0.78 });
   const woodDark = new THREE.MeshStandardMaterial({ color: 0x5c3b22, roughness: 0.8 });
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, 1.84, 18), woodDark);
-  post.position.y = 0.92;
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.08, 0.78, 18), woodDark);
+  post.position.y = 0.39;
   post.castShadow = true;
   group.add(post);
 
   const plateSize = 8 * STUD;
   const model = new THREE.Group();
-  model.position.y = 1.88;
+  model.position.y = 0.82;
   group.add(model);
 
   const topMat = new THREE.MeshStandardMaterial({ color: 0xc5ced8, roughness: 0.82, emissive: 0x000000, emissiveIntensity: 0 });
@@ -492,7 +497,7 @@ export function createChallengeStand(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  newButton.position.set(0.46, 1.86, 0.22);
+  newButton.position.set(0.26, 1.0, 0.36);
   newButton.userData = { type: 'ui', action: 'challenge' };
   newButton.castShadow = true;
   group.add(newButton);
@@ -503,12 +508,12 @@ export function createChallengeStand(targets) {
     new THREE.PlaneGeometry(0.42, 0.13),
     new THREE.MeshBasicMaterial({ map: sign.texture }),
   );
-  signMesh.position.set(-0.34, 1.94, 0.08);
+  signMesh.position.set(-0.22, 1.1, 0.36);
   signMesh.rotation.x = -0.5;
   group.add(signMesh);
 
   const glow = new THREE.PointLight(0xd6ffe6, 0, 2.4);
-  glow.position.set(0, 2.0, 0);
+  glow.position.set(0, 1.0, 0);
   group.add(glow);
   const sparkGeo = new THREE.SphereGeometry(0.014, 6, 6);
   const sparks = [];
@@ -561,7 +566,7 @@ export function createChallengeStand(targets) {
           opacity: 1,
         }),
       );
-      spark.position.set((Math.random() - 0.5) * 0.28, 1.94 + Math.random() * 0.08, (Math.random() - 0.5) * 0.28);
+      spark.position.set((Math.random() - 0.5) * 0.28, 0.9 + Math.random() * 0.08, (Math.random() - 0.5) * 0.28);
       const angle = Math.random() * Math.PI * 2;
       const speed = 0.25 + Math.random() * 0.45;
       group.add(spark);
@@ -605,7 +610,7 @@ export function createChallengeStand(targets) {
 
 function createBin() {
   const group = new THREE.Group();
-  group.position.set(-0.98, 0, 0.06);
+  group.position.set(-0.92, 0, -0.42);
   const mat = new THREE.MeshStandardMaterial({ color: 0x2c333a, roughness: 0.72, metalness: 0.08 });
   const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.76, 16), mat);
   post.position.y = 0.38;

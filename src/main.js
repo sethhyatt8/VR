@@ -1037,6 +1037,7 @@ function setPegScale(next) {
   buildRoot.scale.setScalar(pegScale);
   world.layoutTable(pegScale);
   machine.setPegKnob(pegScale, PEG_MIN, PEG_MAX);
+  machine.placeScreen(pegScale);
   for (const item of targets) {
     if (item.userData?.type === 'brick') syncBrickScale(item);
   }
@@ -1044,12 +1045,12 @@ function setPegScale(next) {
   syncBrickScale(ghost);
   world.challenge.model.scale.setScalar(pegScale);
   const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
-  world.challenge.group.position.set(0, 0, far - 0.46);
-  const front = 8 * STUD * pegScale / 2 + 0.06;
-  world.challenge.sign.position.set(-front - 0.1, 1.94, 0.08);
-  world.challenge.newButton.position.set(front + 0.16, 1.86, 0.22);
+  world.challenge.group.position.set(0, 0, far - 0.4);
+  const front = 8 * STUD * pegScale / 2 + 0.1;
+  world.challenge.sign.position.set(-0.22, 1.1, front);
+  world.challenge.newButton.position.set(0.26, 1.0, front);
   const side = (GRID_X * STUD * pegScale + 0.16) / 2;
-  world.bin.position.set(-(side + 0.38), 0, 0.06);
+  world.bin.position.set(-(side + 0.34), 0, -0.42);
   if (assembly) assembly.carry.scale.setScalar(inBuild(assembly.carry) ? 1 : pegScale);
   pegReadout.textContent = `${(STUD * pegScale * 100).toFixed(1)} cm`;
   if (document.activeElement !== pegInput) pegInput.value = String(pegScale);
