@@ -1058,9 +1058,9 @@ function setPegScale(next) {
   world.challenge.model.scale.setScalar(pegScale);
   const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
   world.challenge.group.position.set(0, 0, far - 0.4);
-  world.challenge.sign.position.set(-1.18, 1.52, -2.674);
+  world.challenge.sign.position.set(-0.32, 1.12, -2.674);
   world.challenge.sign.rotation.set(0, 0, 0);
-  world.challenge.newButton.position.set(-0.8, 1.5, -2.68);
+  world.challenge.newButton.position.set(0.22, 1.12, -2.68);
   world.challenge.newButton.rotation.set(0, 0, 0);
   const side = (GRID_X * STUD * pegScale + 0.16) / 2;
   world.bin.position.set(-(side + 0.34), 0, -0.42);
@@ -1071,7 +1071,7 @@ function setPegScale(next) {
 
 function setPegFromHit(hit) {
   const local = hit.owner.worldToLocal(hit.point.clone());
-  const t = THREE.MathUtils.clamp((local.x + 0.2) / 0.4, 0, 1);
+  const t = THREE.MathUtils.clamp((local.x + 0.42) / 0.84, 0, 1);
   const next = PEG_MIN + t * (PEG_MAX - PEG_MIN);
   pegInput.value = String(next);
   setPegScale(next);
