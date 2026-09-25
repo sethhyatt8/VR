@@ -28,6 +28,14 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.05;
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
+const envScene = new THREE.Scene();
+envScene.add(new THREE.HemisphereLight(0xf4f8fc, 0x6d7c8c, 1.15));
+const envGlow = new THREE.Mesh(new THREE.PlaneGeometry(6, 2.4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+envGlow.position.set(0.4, 2.4, 2);
+envScene.add(envGlow);
+const pmrem = new THREE.PMREMGenerator(renderer);
+world.scene.environment = pmrem.fromScene(envScene, 0.04).texture;
+pmrem.dispose();
 document.body.appendChild(renderer.domElement);
 document.body.appendChild(XRButton.createButton(renderer, {
   optionalFeatures: ['local-floor', 'bounded-floor'],
@@ -283,7 +291,7 @@ function showExample(model) {
 
 const verdictStatus = {
   ready: 'Match the build behind the table. Any turn is fine, and a mirror counts.',
-  match: 'That matches. Press NEW for another.',
+  match: 'You got it. Press NEW for another.',
   extra: 'Extra bricks are still on the table. Drop them in the TOSS bin on your left.',
   short: 'Still missing some. Any turn is fine, and a mirror counts.',
   different: 'Colors or heights still differ. Any turn is fine, and a mirror counts.',
@@ -320,7 +328,7 @@ function startChallenge(first) {
     challengeMatched = true;
     world.challenge.setVerdict('match');
     celebrateSolve();
-    setStatus('That already matches. Press NEW for another.');
+    setStatus('You got it. Press NEW for another.');
     return;
   }
   setStatus(first
@@ -1046,9 +1054,8 @@ function setPegScale(next) {
   world.challenge.model.scale.setScalar(pegScale);
   const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
   world.challenge.group.position.set(0, 0, far - 0.4);
-  const front = 8 * STUD * pegScale / 2 + 0.1;
-  world.challenge.sign.position.set(-0.22, 1.1, front);
-  world.challenge.newButton.position.set(0.26, 1.0, front);
+  world.challenge.sign.position.set(-0.12, 1.56, -0.02);
+  world.challenge.newButton.position.set(0.32, 1.52, 0);
   const side = (GRID_X * STUD * pegScale + 0.16) / 2;
   world.bin.position.set(-(side + 0.34), 0, -0.42);
   if (assembly) assembly.carry.scale.setScalar(inBuild(assembly.carry) ? 1 : pegScale);
@@ -1058,7 +1065,7 @@ function setPegScale(next) {
 
 function setPegFromHit(hit) {
   const local = hit.owner.worldToLocal(hit.point.clone());
-  const t = THREE.MathUtils.clamp((local.x + 0.15) / 0.3, 0, 1);
+  const t = THREE.MathUtils.clamp((local.x + 0.2) / 0.4, 0, 1);
   const next = PEG_MIN + t * (PEG_MAX - PEG_MIN);
   pegInput.value = String(next);
   setPegScale(next);

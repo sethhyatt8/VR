@@ -211,31 +211,29 @@ export function createWorld() {
 function createMachine(targets) {
   const mount = new THREE.Group();
 
-  const openPose = { x: -0.95, y: 1.42, z: -0.55, tilt: -0.12, yaw: 0.28 };
-  const closedPose = { x: -1.05, y: 1.7, z: -0.7, tilt: 0.15, yaw: 0.55 };
+  const openPose = { x: 0, y: 1.0, z: -0.5, tilt: -0.48, yaw: 0 };
+  const closedPose = { x: 0, y: 1.62, z: -0.82, tilt: 0.15, yaw: 0 };
   const group = new THREE.Group();
   group.position.set(openPose.x, openPose.y, openPose.z);
   group.rotation.x = openPose.tilt;
   mount.add(group);
 
-  const caseMat = new THREE.MeshStandardMaterial({ color: 0x2b3138, roughness: 0.55, metalness: 0.18 });
-  const trimMat = new THREE.MeshStandardMaterial({ color: 0x3e4752, roughness: 0.45, metalness: 0.22 });
-  addBox(group, [1.04, 1.08, 0.02], [0, 0, 0], caseMat);
-  addBox(group, [1.08, 0.02, 0.028], [0, 0.53, 0], trimMat);
+  const caseMat = new THREE.MeshStandardMaterial({ color: 0xd7dee6, roughness: 0.28, metalness: 0.72 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: 0xf4f7fb, roughness: 0.18, metalness: 0.85 });
+  addBox(group, [0.92, 0.72, 0.016], [0, 0, 0], caseMat);
+  addBox(group, [0.96, 0.014, 0.022], [0, 0.35, 0], trimMat);
 
   const screen = canvasTexture(512, 256, () => {});
   const screenMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.86, 0.16),
+    new THREE.PlaneGeometry(0.78, 0.11),
     new THREE.MeshBasicMaterial({ map: screen.texture }),
   );
-  screenMesh.position.set(0, 0.34, 0.016);
+  screenMesh.position.set(0, 0.18, 0.014);
   group.add(screenMesh);
 
   const colorButtons = COLORS.map((color, index) => {
-    const col = index % 4;
-    const row = Math.floor(index / 4);
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.072, 0.072, 0.016),
+      new THREE.BoxGeometry(0.058, 0.058, 0.014),
       new THREE.MeshStandardMaterial({
         color: color.hex,
         roughness: 0.42,
@@ -243,7 +241,7 @@ function createMachine(targets) {
         emissiveIntensity: 0.18,
       }),
     );
-    mesh.position.set(-0.27 + col * 0.18, 0.18 - row * 0.1, 0.02);
+    mesh.position.set(-0.35 + index * 0.1, 0.06, 0.016);
     mesh.userData = { type: 'ui', action: 'color', value: color.id };
     mesh.castShadow = true;
     group.add(mesh);
@@ -255,7 +253,7 @@ function createMachine(targets) {
     const col = index % 5;
     const row = Math.floor(index / 5);
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.15, 0.055, 0.016),
+      new THREE.BoxGeometry(0.145, 0.046, 0.014),
       new THREE.MeshStandardMaterial({
         map: buttonTexture(shape.button || shape.name, '#243038', '#f4f7f8'),
         roughness: 0.5,
@@ -263,7 +261,7 @@ function createMachine(targets) {
         emissiveIntensity: 0,
       }),
     );
-    mesh.position.set(-0.36 + col * 0.18, -0.04 - row * 0.09, 0.02);
+    mesh.position.set(-0.336 + col * 0.168, -0.04 - row * 0.062, 0.016);
     mesh.userData = { type: 'ui', action: 'shape', value: shape.id };
     mesh.castShadow = true;
     group.add(mesh);
@@ -273,7 +271,7 @@ function createMachine(targets) {
 
   const heightButtons = HEIGHTS.map((height, index) => {
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.12, 0.05, 0.016),
+      new THREE.BoxGeometry(0.1, 0.042, 0.014),
       new THREE.MeshStandardMaterial({
         map: buttonTexture(height.label, '#243038', '#f4f7f8'),
         roughness: 0.5,
@@ -281,7 +279,7 @@ function createMachine(targets) {
         emissiveIntensity: 0,
       }),
     );
-    mesh.position.set(-0.36 + index * 0.16, -0.31, 0.02);
+    mesh.position.set(-0.36 + index * 0.115, -0.18, 0.016);
     mesh.userData = { type: 'ui', action: 'height', value: height.id };
     mesh.castShadow = true;
     group.add(mesh);
@@ -290,7 +288,7 @@ function createMachine(targets) {
   });
 
   const flatButton = new THREE.Mesh(
-    new THREE.BoxGeometry(0.16, 0.05, 0.016),
+    new THREE.BoxGeometry(0.12, 0.042, 0.014),
     new THREE.MeshStandardMaterial({
       map: buttonTexture('FLAT', '#243038', '#f4f7f8'),
       roughness: 0.5,
@@ -298,14 +296,14 @@ function createMachine(targets) {
       emissiveIntensity: 0,
     }),
   );
-  flatButton.position.set(0.28, -0.31, 0.02);
+  flatButton.position.set(0.04, -0.18, 0.016);
   flatButton.userData = { type: 'ui', action: 'top' };
   flatButton.castShadow = true;
   group.add(flatButton);
   targets.push(flatButton);
 
   const orderButton = new THREE.Mesh(
-    new THREE.BoxGeometry(0.28, 0.07, 0.018),
+    new THREE.BoxGeometry(0.22, 0.046, 0.016),
     new THREE.MeshStandardMaterial({
       map: buttonTexture('ORDER', '#1f7a45', '#f4fff7'),
       roughness: 0.45,
@@ -313,17 +311,17 @@ function createMachine(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  orderButton.position.set(-0.22, -0.44, 0.022);
+  orderButton.position.set(0.28, -0.18, 0.018);
   orderButton.userData = { type: 'ui', action: 'order' };
   orderButton.castShadow = true;
   group.add(orderButton);
   targets.push(orderButton);
 
   const pegTrack = new THREE.Mesh(
-    new THREE.BoxGeometry(0.36, 0.07, 0.02),
+    new THREE.BoxGeometry(0.5, 0.05, 0.016),
     new THREE.MeshStandardMaterial({ color: 0x1c242c, roughness: 0.55 }),
   );
-  pegTrack.position.set(0.24, -0.44, 0.02);
+  pegTrack.position.set(0, -0.28, 0.014);
   pegTrack.userData = { type: 'ui', action: 'peg' };
   group.add(pegTrack);
   targets.push(pegTrack);
@@ -350,7 +348,7 @@ function createMachine(targets) {
 
   function setPegKnob(scale, min, max) {
     const t = Math.min(1, Math.max(0, (scale - min) / (max - min)));
-    pegKnob.position.x = -0.15 + t * 0.3;
+    pegKnob.position.x = -0.2 + t * 0.4;
   }
 
   function paintScreen(headline, detail) {
@@ -377,7 +375,7 @@ function createMachine(targets) {
       roughness: 0.5,
     }),
   );
-  hideButton.position.set(0.4, 0.46, 0.02);
+  hideButton.position.set(0.34, 0.3, 0.016);
   hideButton.userData = { type: 'ui', action: 'screen' };
   group.add(hideButton);
   targets.push(hideButton);
@@ -412,12 +410,11 @@ function createMachine(targets) {
     tab.visible = openAmount < 0.92;
   }
 
-  function placeScreen(scale) {
-    const side = (GRID_X * STUD * scale + 0.16) / 2;
-    const x = -(side + 0.36);
-    openPose.x = x;
-    closedPose.x = x;
-    tab.position.set(x + 0.28, 1.02, 0.48);
+  function placeScreen(scale = 1) {
+    openPose.x = 0;
+    closedPose.x = 0;
+    const plateFront = -0.55 + GRID_Z * STUD * scale;
+    tab.position.set(0, 0.84, plateFront + 0.12);
     applyScreenPose();
   }
 
@@ -497,7 +494,7 @@ export function createChallengeStand(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  newButton.position.set(0.26, 1.0, 0.36);
+  newButton.position.set(0.32, 1.52, 0.0);
   newButton.userData = { type: 'ui', action: 'challenge' };
   newButton.castShadow = true;
   group.add(newButton);
@@ -508,8 +505,8 @@ export function createChallengeStand(targets) {
     new THREE.PlaneGeometry(0.42, 0.13),
     new THREE.MeshBasicMaterial({ map: sign.texture }),
   );
-  signMesh.position.set(-0.22, 1.1, 0.36);
-  signMesh.rotation.x = -0.5;
+  signMesh.position.set(-0.12, 1.56, -0.02);
+  signMesh.rotation.x = -0.62;
   group.add(signMesh);
 
   const glow = new THREE.PointLight(0xd6ffe6, 0, 2.4);
@@ -539,7 +536,7 @@ export function createChallengeStand(targets) {
 
   const verdictCopy = {
     ready: ['Match this', 'Any turn is fine'],
-    match: ['It matches', 'Press NEW'],
+    match: ['You got it', 'Press NEW'],
     extra: ['Match this', 'Toss the extra bricks'],
     short: ['Match this', 'Still missing some'],
     different: ['Match this', 'Check colors and heights'],
