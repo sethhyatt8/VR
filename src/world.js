@@ -797,5 +797,20 @@ export function createPedestal(index, label) {
   tag.position.set(0, 0.52, 0.058);
   group.add(tag);
 
-  return { group, top };
+  const dismiss = new THREE.Mesh(
+    new THREE.BoxGeometry(0.12, 0.08, 0.045),
+    new THREE.MeshStandardMaterial({
+      map: buttonTexture('X', '#b4332c', '#fff6f4'),
+      color: 0xffffff,
+      roughness: 0.42,
+      emissive: 0xffb0a8,
+      emissiveIntensity: 0.2,
+    }),
+  );
+  dismiss.position.set(0, 0.42, 0.1);
+  dismiss.castShadow = true;
+  dismiss.userData = { type: 'ui', action: 'dismiss', restZ: 0.1, press: 0 };
+  group.add(dismiss);
+
+  return { group, top, dismiss };
 }

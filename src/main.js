@@ -6,7 +6,7 @@ import { createBrick, makeGhost, setBrickRaycast } from './bricks.js';
 import { cellsFromGrid, generateModel, lookVerdict, sameLook } from './challenge.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, heightById, LAYER, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
 import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
-import { createPedestal, createWorld } from './world.js';
+import { createPedestal, createWorld, pedestalSlot } from './world.js';
 
 const statusEl = document.getElementById('status');
 const hudEl = document.getElementById('hud');
@@ -481,6 +481,7 @@ function activateUi(owner) {
     const open = machine.toggleScreen();
     setStatus(open ? 'Order screen is down.' : 'Order screen is tucked away. Press PARTS to bring it back.');
   }
+  else if (owner.userData.action === 'dismiss') removePedestal(owner.userData.pedestalId);
 }
 
 function orderSelection() {
@@ -498,7 +499,7 @@ function orderSelection() {
     return existing;
   }
   if (pedestals.length >= MAX_PEDESTALS) {
-    setStatus(`The room already has ${MAX_PEDESTALS} pedestals.`);
+    setStatus(`The room already has ${MAX_PEDESTALS} pedestals. Press the red X on one to clear it.`);
     return null;
   }
   const pedestal = spawnPedestal(selection);
@@ -523,12 +524,74 @@ function spawnPedestal(choice) {
     group: visual.group,
     top: visual.top,
     supply: null,
+    dismiss: visual.dismiss,
     index,
   };
   nextPedestalId += 1;
+  visual.dismiss.userData.pedestalId = pedestal.id;
+  targets.push(visual.dismiss);
+  machine.pressables.push(visual.dismiss);
   pedestals.push(pedestal);
   refill(pedestal, true);
   return pedestal;
+}
+
+function detachSupplyHome(home, id) {
+  if (home?.role === 'supply' && home.pedestalId === id) {
+    home.role = 'loose';
+    home.pedestalId = null;
+  }
+}
+
+function disposePedestalGroup(group) {
+  group.traverse((child) => {
+    if (!child.isMesh) return;
+    child.geometry?.dispose();
+    const materials = Array.isArray(child.material) ? child.material : [child.material];
+    for (const material of materials) {
+      material.map?.dispose();
+      material.dispose();
+    }
+  });
+}
+
+function removePedestal(id) {
+  const index = pedestals.findIndex((item) => item.id === id);
+  if (index < 0) return;
+  const pedestal = pedestals[index];
+  if (pedestal.supply) {
+    const brick = pedestal.supply;
+    pedestal.supply = null;
+    flingBrick(brick);
+  }
+  detachSupplyHome(heldHome, id);
+  if (assembly) {
+    for (const piece of assembly.pieces) detachSupplyHome(piece.home, id);
+  }
+  const buttonIndex = targets.indexOf(pedestal.dismiss);
+  if (buttonIndex >= 0) targets.splice(buttonIndex, 1);
+  const pressIndex = machine.pressables.indexOf(pedestal.dismiss);
+  if (pressIndex >= 0) machine.pressables.splice(pressIndex, 1);
+  pedestals.splice(index, 1);
+  const group = pedestal.group;
+  const dropFrom = group.position.y;
+  jobs.push({
+    t: 0,
+    d: 0.32,
+    update(k) {
+      group.position.y = dropFrom - k * k * 1.15;
+      if (k < 1) return;
+      group.parent?.remove(group);
+      disposePedestalGroup(group);
+    },
+  });
+  pedestals.forEach((item, slot) => {
+    item.index = slot;
+    const next = pedestalSlot(slot);
+    item.group.position.x = next.x;
+    item.group.position.z = next.z;
+  });
+  setStatus('Pedestal cleared.');
 }
 
 function refill(pedestal, animateIn) {
@@ -851,6 +914,10 @@ function placeSingle() {
 function restoreBrick(brick, home) {
   brick.userData.rot = home.rot;
   brick.userData.snap = null;
+  if (home.role === 'loose') {
+    flingBrick(brick);
+    return;
+  }
   if (home.role === 'supply') {
     const pedestal = pedestals.find((item) => item.id === home.pedestalId);
     if (pedestal) {
@@ -861,6 +928,9 @@ function restoreBrick(brick, home) {
       brick.userData.pedestalId = home.pedestalId;
       pedestal.supply = brick;
       syncBrickScale(brick);
+    } else {
+      flingBrick(brick);
+      return;
     }
   } else if (home.role === 'placed' && home.anchor) {
     brick.userData.rot = home.rot;
