@@ -292,13 +292,12 @@ function createMachine(targets) {
 
   const screen = canvasTexture(768, 320, () => {});
   const screenMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.76, 0.44),
+    new THREE.PlaneGeometry(1.8, 0.46),
     new THREE.MeshBasicMaterial({ map: screen.texture }),
   );
-  screenMesh.position.set(0.08, 0, 0.058);
+  screenMesh.position.set(0, 0, 0.057);
   orderButton.add(screenMesh);
   const previewRoot = new THREE.Group();
-  previewRoot.position.set(-0.62, 0.02, 0.12);
   orderButton.add(previewRoot);
 
   const colorButtons = COLORS.map((color, index) => {
@@ -417,7 +416,7 @@ function createMachine(targets) {
 
   function paintScreen(label) {
     const { ctx, texture, canvas } = screen;
-    ctx.fillStyle = '#1c6e3e';
+    ctx.fillStyle = '#1f7a45';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#d7ecdf';
     ctx.textAlign = 'left';
@@ -442,9 +441,18 @@ function createMachine(targets) {
     });
     setBrickRaycast(brick, false);
     brick.userData.type = 'preview';
+    brick.traverse((child) => {
+      if (child.isMesh) child.castShadow = false;
+    });
     const span = Math.max(shape.w, shape.d) * STUD;
-    brick.scale.setScalar(Math.min(3.2, 0.36 / span));
-    brick.rotation.set(-0.72, 0.62, 0.04);
+    const fit = Math.min(2.2, 0.32 / span);
+    brick.scale.set(fit, fit * 0.22, fit);
+    brick.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(0, 0, 1),
+      new THREE.Vector3(1, 0, 0),
+    ));
+    brick.position.set(-0.55, 0, 0.058);
     previewRoot.add(brick);
   }
 
