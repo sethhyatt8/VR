@@ -193,10 +193,15 @@ export function createWorld() {
   scene.add(challenge.group);
   scene.add(challenge.sign);
   scene.add(challenge.newButton);
-  challenge.sign.position.set(-0.32, 1.12, WALL_Z + 0.006);
+  challenge.sign.position.set(-0.34, 0.9, WALL_Z + 0.01);
   challenge.sign.rotation.set(0, 0, 0);
-  challenge.newButton.position.set(0.22, 1.12, WALL_Z);
+  challenge.sign.scale.setScalar(1.22);
+  challenge.newButton.position.set(0.22, 0.9, WALL_Z + 0.03);
   challenge.newButton.rotation.set(0, 0, 0);
+  challenge.newButton.userData.restZ = WALL_Z + 0.03;
+  challenge.newButton.userData.baseScale = 1.22;
+  challenge.newButton.scale.setScalar(1.22);
+  machine.pressables.push(challenge.newButton);
   const bin = createBin();
   scene.add(bin);
 
@@ -218,12 +223,21 @@ export function createWorld() {
 function createMachine(targets) {
   const mount = new THREE.Group();
 
-  const openPose = { x: 0, y: 1.94, z: WALL_Z, tilt: 0, yaw: 0 };
-  const closedPose = { x: 0, y: 3.35, z: WALL_Z, tilt: 0, yaw: 0 };
+  const openPose = { x: 0, y: 1.92, z: WALL_Z, tilt: 0, yaw: 0 };
+  const closedPose = { x: 0, y: 3.5, z: WALL_Z, tilt: 0, yaw: 0 };
   const group = new THREE.Group();
   group.position.set(openPose.x, openPose.y, openPose.z);
   group.rotation.x = openPose.tilt;
+  group.scale.set(1.22, 1.22, 1);
   mount.add(group);
+  const pressables = [];
+  function trackPress(mesh, restZ = 0.038) {
+    mesh.position.z = restZ;
+    mesh.userData.restZ = restZ;
+    mesh.userData.press = 0;
+    pressables.push(mesh);
+    return mesh;
+  }
 
   const sheen = canvasTexture(128, 256, (ctx, w, h) => {
     const fade = ctx.createLinearGradient(0, 0, w * 0.35, h);
@@ -265,7 +279,7 @@ function createMachine(targets) {
 
   const colorButtons = COLORS.map((color, index) => {
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.078, 0.078, 0.014),
+      new THREE.BoxGeometry(0.078, 0.078, 0.044),
       new THREE.MeshStandardMaterial({
         color: color.hex,
         roughness: 0.42,
@@ -277,6 +291,7 @@ function createMachine(targets) {
     mesh.position.set(-((COLORS.length - 1) * step) / 2 + index * step, 0.12, 0.016);
     mesh.userData = { type: 'ui', action: 'color', value: color.id };
     mesh.castShadow = true;
+    trackPress(mesh);
     group.add(mesh);
     targets.push(mesh);
     return mesh;
@@ -286,7 +301,7 @@ function createMachine(targets) {
     const col = index % 5;
     const row = Math.floor(index / 5);
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.26, 0.09, 0.014),
+      new THREE.BoxGeometry(0.26, 0.09, 0.044),
       new THREE.MeshStandardMaterial({
         map: buttonTexture(shape.button || shape.name, '#243038', '#f4f7f8'),
         roughness: 0.5,
@@ -297,6 +312,7 @@ function createMachine(targets) {
     mesh.position.set(-0.6 + col * 0.3, -0.06 - row * 0.14, 0.016);
     mesh.userData = { type: 'ui', action: 'shape', value: shape.id };
     mesh.castShadow = true;
+    trackPress(mesh);
     group.add(mesh);
     targets.push(mesh);
     return mesh;
@@ -304,7 +320,7 @@ function createMachine(targets) {
 
   const heightButtons = HEIGHTS.map((height, index) => {
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.18, 0.08, 0.014),
+      new THREE.BoxGeometry(0.18, 0.08, 0.044),
       new THREE.MeshStandardMaterial({
         map: buttonTexture(height.label, '#243038', '#f4f7f8'),
         roughness: 0.5,
@@ -315,13 +331,14 @@ function createMachine(targets) {
     mesh.position.set(-0.64 + index * 0.22, -0.38, 0.016);
     mesh.userData = { type: 'ui', action: 'height', value: height.id };
     mesh.castShadow = true;
+    trackPress(mesh);
     group.add(mesh);
     targets.push(mesh);
     return mesh;
   });
 
   const flatButton = new THREE.Mesh(
-    new THREE.BoxGeometry(0.2, 0.08, 0.014),
+    new THREE.BoxGeometry(0.2, 0.08, 0.044),
     new THREE.MeshStandardMaterial({
       map: buttonTexture('FLAT', '#243038', '#f4f7f8'),
       roughness: 0.5,
@@ -332,11 +349,12 @@ function createMachine(targets) {
   flatButton.position.set(0.12, -0.38, 0.016);
   flatButton.userData = { type: 'ui', action: 'top' };
   flatButton.castShadow = true;
+  trackPress(flatButton);
   group.add(flatButton);
   targets.push(flatButton);
 
   const orderButton = new THREE.Mesh(
-    new THREE.BoxGeometry(0.32, 0.09, 0.016),
+    new THREE.BoxGeometry(0.32, 0.09, 0.048),
     new THREE.MeshStandardMaterial({
       map: buttonTexture('ORDER', '#1f7a45', '#f4fff7'),
       roughness: 0.45,
@@ -347,6 +365,7 @@ function createMachine(targets) {
   orderButton.position.set(0.48, -0.38, 0.018);
   orderButton.userData = { type: 'ui', action: 'order' };
   orderButton.castShadow = true;
+  trackPress(orderButton);
   group.add(orderButton);
   targets.push(orderButton);
 
@@ -402,7 +421,7 @@ function createMachine(targets) {
   }
 
   const hideButton = new THREE.Mesh(
-    new THREE.BoxGeometry(0.24, 0.08, 0.016),
+    new THREE.BoxGeometry(0.24, 0.08, 0.046),
     new THREE.MeshStandardMaterial({
       map: buttonTexture('HIDE', '#3a4652', '#f4f7f8'),
       roughness: 0.5,
@@ -410,11 +429,12 @@ function createMachine(targets) {
   );
   hideButton.position.set(0.64, 0.62, 0.016);
   hideButton.userData = { type: 'ui', action: 'screen' };
+  trackPress(hideButton);
   group.add(hideButton);
   targets.push(hideButton);
 
   const tab = new THREE.Mesh(
-    new THREE.BoxGeometry(0.32, 0.1, 0.02),
+    new THREE.BoxGeometry(0.32, 0.1, 0.05),
     new THREE.MeshStandardMaterial({
       map: buttonTexture('PARTS', '#1f7a45', '#f4fff7'),
       roughness: 0.45,
@@ -422,11 +442,13 @@ function createMachine(targets) {
       emissiveIntensity: 0.2,
     }),
   );
-  tab.position.set(-0.95, 1.02, 0.46);
-  tab.userData = { type: 'ui', action: 'screen' };
+  tab.position.set(0.58, 0.9, WALL_Z + 0.03);
+  tab.userData = { type: 'ui', action: 'screen', restZ: WALL_Z + 0.03, press: 0, baseScale: 1.22 };
+  tab.scale.setScalar(1.22);
   tab.visible = false;
   mount.add(tab);
   targets.push(tab);
+  pressables.push(tab);
 
   let openAmount = 1;
   let openTarget = 1;
@@ -450,7 +472,7 @@ function createMachine(targets) {
     closedPose.x = 0;
     closedPose.z = WALL_Z;
     closedPose.tilt = 0;
-    tab.position.set(0.58, 1.12, WALL_Z);
+    tab.position.set(0.58, 0.9, tab.userData.restZ);
     tab.rotation.set(0, 0, 0);
     applyScreenPose();
   }
@@ -465,6 +487,11 @@ function createMachine(targets) {
     openAmount += (openTarget - openAmount) * step;
     if (Math.abs(openTarget - openAmount) < 0.001) openAmount = openTarget;
     applyScreenPose();
+    for (const mesh of pressables) {
+      let press = mesh.userData.press || 0;
+      if (press > 0) mesh.userData.press = Math.max(0, press - dt * 3.4);
+      mesh.position.z = mesh.userData.restZ - (mesh.userData.press || 0) * 0.028;
+    }
   }
 
   applyScreenPose();
@@ -487,7 +514,7 @@ function createMachine(targets) {
 
   placeScreen(1);
 
-  return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob, toggleScreen, update, placeScreen };
+  return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob, toggleScreen, update, placeScreen, pressables };
 }
 
 export function createChallengeStand(targets) {
@@ -523,7 +550,7 @@ export function createChallengeStand(targets) {
   model.add(bricks);
 
   const newButton = new THREE.Mesh(
-    new THREE.BoxGeometry(0.32, 0.1, 0.02),
+    new THREE.BoxGeometry(0.32, 0.1, 0.05),
     new THREE.MeshStandardMaterial({
       map: buttonTexture('NEW', '#1f7a45', '#f4fff7'),
       roughness: 0.45,
@@ -531,9 +558,10 @@ export function createChallengeStand(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  newButton.position.set(0.22, 1.12, 0);
+  newButton.position.set(0.22, 0.9, 0);
   newButton.rotation.set(0, 0, 0);
-  newButton.userData = { type: 'ui', action: 'challenge' };
+  newButton.userData = { type: 'ui', action: 'challenge', restZ: 0, press: 0, baseScale: 1.22 };
+  newButton.scale.setScalar(1.22);
   newButton.castShadow = true;
   group.add(newButton);
   targets.push(newButton);
@@ -543,8 +571,9 @@ export function createChallengeStand(targets) {
     new THREE.PlaneGeometry(0.52, 0.14),
     new THREE.MeshBasicMaterial({ map: sign.texture }),
   );
-  signMesh.position.set(-0.32, 1.12, 0);
+  signMesh.position.set(-0.34, 0.9, 0);
   signMesh.rotation.set(0, 0, 0);
+  signMesh.scale.setScalar(1.22);
   group.add(signMesh);
 
   const glow = new THREE.PointLight(0xd6ffe6, 0, 2.4);

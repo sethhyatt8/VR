@@ -132,11 +132,21 @@ function setupController(index) {
   controller.addEventListener('squeezeend', () => onXrRelease(controller));
   scene.add(controller);
 
-  const geometry = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(0, 0, 0),
-    new THREE.Vector3(0, 0, -2),
-  ]);
-  controller.add(new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xfff4e4 })));
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.004, 0.0014, 1, 8),
+    new THREE.MeshBasicMaterial({ color: 0x3ef0c4 }),
+  );
+  beam.geometry.translate(0, 0.5, 0);
+  beam.rotation.x = Math.PI / 2;
+  beam.visible = false;
+  controller.add(beam);
+  const dot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.016, 12, 8),
+    new THREE.MeshBasicMaterial({ color: 0xeffff8 }),
+  );
+  dot.visible = false;
+  controller.add(dot);
+  controller.userData.laser = { beam, dot };
 
   const grip = renderer.xr.getControllerGrip(index);
   controller.userData.grip = grip;
@@ -377,6 +387,23 @@ function hitFromController(controller) {
   return hitTest(worldPoint, tmpDir);
 }
 
+function updateLaser(controller) {
+  const laser = controller.userData.laser;
+  if (!laser) return;
+  if (!renderer.xr.isPresenting) {
+    laser.beam.visible = false;
+    laser.dot.visible = false;
+    return;
+  }
+  const hit = hitFromController(controller);
+  controller.getWorldPosition(worldPoint);
+  const distance = hit ? Math.max(0.08, worldPoint.distanceTo(hit.point)) : 2.8;
+  laser.beam.visible = true;
+  laser.beam.scale.y = distance;
+  laser.dot.visible = true;
+  laser.dot.position.set(0, 0, -distance);
+}
+
 function raiseOnto(point, brick, layer) {
   const base = new THREE.Vector3();
   const scale = new THREE.Vector3();
@@ -442,6 +469,7 @@ function toggleFlat() {
 }
 
 function activateUi(owner) {
+  if (owner.userData.restZ != null) owner.userData.press = 1;
   if (owner.userData.action === 'color') selectColor(owner.userData.value);
   else if (owner.userData.action === 'shape') selectShape(owner.userData.value);
   else if (owner.userData.action === 'height') selectHeight(owner.userData.value);
@@ -1058,10 +1086,13 @@ function setPegScale(next) {
   world.challenge.model.scale.setScalar(pegScale);
   const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
   world.challenge.group.position.set(0, 0, far - 0.4);
-  world.challenge.sign.position.set(-0.32, 1.12, -2.674);
+  world.challenge.sign.position.set(-0.34, 0.9, -2.67);
   world.challenge.sign.rotation.set(0, 0, 0);
-  world.challenge.newButton.position.set(0.22, 1.12, -2.68);
+  world.challenge.sign.scale.setScalar(1.22);
+  world.challenge.newButton.position.set(0.22, 0.9, -2.65);
   world.challenge.newButton.rotation.set(0, 0, 0);
+  world.challenge.newButton.userData.restZ = -2.65;
+  world.challenge.newButton.scale.setScalar(world.challenge.newButton.userData.baseScale || 1.22);
   const side = (GRID_X * STUD * pegScale + 0.16) / 2;
   world.bin.position.set(-(side + 0.34), 0, -0.42);
   if (assembly) assembly.carry.scale.setScalar(inBuild(assembly.carry) ? 1 : pegScale);
@@ -1082,14 +1113,18 @@ pegInput.addEventListener('input', () => {
 });
 setPegScale(1);
 
+function uiRest(owner) {
+  return owner.userData.baseScale ?? 1;
+}
+
 function hover(owner) {
   if (hovered === owner) return;
   if (hovered?.userData.type === 'ui' && hovered.userData.action !== 'peg') {
     const selectedColor = hovered.userData.action === 'color' && hovered.userData.value === selection.colorId;
-    hovered.scale.setScalar(selectedColor ? 1.1 : 1);
+    hovered.scale.setScalar(uiRest(hovered) * (selectedColor ? 1.08 : 1));
   }
   hovered = owner;
-  if (owner?.userData.type === 'ui' && owner.userData.action !== 'peg') owner.scale.setScalar(1.12);
+  if (owner?.userData.type === 'ui' && owner.userData.action !== 'peg') owner.scale.setScalar(uiRest(owner) * 1.1);
   renderer.domElement.style.cursor = owner ? 'pointer' : (held ? 'grabbing' : 'default');
 }
 
@@ -1246,6 +1281,7 @@ function frame() {
   }
   machine.update(dt);
   world.challenge.update(dt);
+  for (const controller of controllers) updateLaser(controller);
   if (!renderer.xr.isPresenting) controls.update();
   else {
     for (const controller of controllers) {
