@@ -29,9 +29,13 @@ renderer.toneMappingExposure = 1.05;
 renderer.xr.enabled = true;
 renderer.xr.setReferenceSpaceType('local-floor');
 const envScene = new THREE.Scene();
-envScene.add(new THREE.HemisphereLight(0xf4f8fc, 0x6d7c8c, 1.15));
-const envGlow = new THREE.Mesh(new THREE.PlaneGeometry(6, 2.4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
-envGlow.position.set(0.4, 2.4, 2);
+envScene.add(new THREE.HemisphereLight(0xffffff, 0xd5dee8, 1.5));
+envScene.add(new THREE.Mesh(
+  new THREE.SphereGeometry(8, 20, 14),
+  new THREE.MeshBasicMaterial({ color: 0xb7c4d0, side: THREE.BackSide }),
+));
+const envGlow = new THREE.Mesh(new THREE.SphereGeometry(1.1, 16, 12), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+envGlow.position.set(1.2, 3.4, 1.6);
 envScene.add(envGlow);
 const pmrem = new THREE.PMREMGenerator(renderer);
 world.scene.environment = pmrem.fromScene(envScene, 0.04).texture;

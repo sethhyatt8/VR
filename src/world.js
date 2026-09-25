@@ -211,15 +211,40 @@ export function createWorld() {
 function createMachine(targets) {
   const mount = new THREE.Group();
 
-  const openPose = { x: 0, y: 1.0, z: -0.5, tilt: -0.48, yaw: 0 };
-  const closedPose = { x: 0, y: 1.62, z: -0.82, tilt: 0.15, yaw: 0 };
+  const openPose = { x: 0, y: 1.88, z: -1.05, tilt: -0.7, yaw: 0 };
+  const closedPose = { x: 0, y: 2.45, z: -1.2, tilt: -0.15, yaw: 0 };
   const group = new THREE.Group();
   group.position.set(openPose.x, openPose.y, openPose.z);
   group.rotation.x = openPose.tilt;
   mount.add(group);
 
-  const caseMat = new THREE.MeshStandardMaterial({ color: 0xd7dee6, roughness: 0.28, metalness: 0.72 });
-  const trimMat = new THREE.MeshStandardMaterial({ color: 0xf4f7fb, roughness: 0.18, metalness: 0.85 });
+  const sheen = canvasTexture(128, 256, (ctx, w, h) => {
+    const fade = ctx.createLinearGradient(0, 0, w * 0.35, h);
+    fade.addColorStop(0, '#f7fbff');
+    fade.addColorStop(0.28, '#d5dee8');
+    fade.addColorStop(0.46, '#f3f7fb');
+    fade.addColorStop(0.7, '#c3ced8');
+    fade.addColorStop(1, '#e6edf3');
+    ctx.fillStyle = fade;
+    ctx.fillRect(0, 0, w, h);
+  }).texture;
+  const caseMat = new THREE.MeshPhysicalMaterial({
+    map: sheen,
+    color: 0xffffff,
+    roughness: 0.2,
+    metalness: 0.82,
+    clearcoat: 1,
+    clearcoatRoughness: 0.05,
+    envMapIntensity: 1.15,
+  });
+  const trimMat = new THREE.MeshPhysicalMaterial({
+    color: 0xf7fafc,
+    roughness: 0.1,
+    metalness: 0.9,
+    clearcoat: 1,
+    clearcoatRoughness: 0.04,
+    envMapIntensity: 1.2,
+  });
   addBox(group, [0.92, 0.72, 0.016], [0, 0, 0], caseMat);
   addBox(group, [0.96, 0.014, 0.022], [0, 0.35, 0], trimMat);
 
@@ -411,10 +436,14 @@ function createMachine(targets) {
   }
 
   function placeScreen(scale = 1) {
+    const far = -0.55 - (GRID_Z * STUD * scale + 0.16) / 2;
+    const standZ = far - 0.4;
     openPose.x = 0;
+    openPose.z = standZ + 0.34;
     closedPose.x = 0;
-    const plateFront = -0.55 + GRID_Z * STUD * scale;
-    tab.position.set(0, 0.84, plateFront + 0.12);
+    closedPose.z = standZ + 0.12;
+    tab.position.set(0.66, 1.5, standZ + 0.05);
+    tab.rotation.x = -0.45;
     applyScreenPose();
   }
 
@@ -495,6 +524,7 @@ export function createChallengeStand(targets) {
     }),
   );
   newButton.position.set(0.32, 1.52, 0.0);
+  newButton.rotation.x = -0.45;
   newButton.userData = { type: 'ui', action: 'challenge' };
   newButton.castShadow = true;
   group.add(newButton);
