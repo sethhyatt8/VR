@@ -6,6 +6,7 @@ import { createBrick, makeGhost, setBrickRaycast } from './bricks.js';
 import { cellsFromGrid, generateModel, lookVerdict, sameLook } from './challenge.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, heightById, LAYER, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
 import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
+import { hostRoomCode, openRoom, watchCodeFromUrl } from './watch.js';
 import { createPedestal, createWorld, pedestalSlot } from './world.js';
 
 const statusEl = document.getElementById('status');
@@ -13,6 +14,14 @@ const hudEl = document.getElementById('hud');
 const scalePanel = document.getElementById('scale-panel');
 const pegInput = document.getElementById('peg-size');
 const pegReadout = document.getElementById('peg-readout');
+const roomCodeEl = document.getElementById('room-code');
+const roomLabelEl = document.getElementById('room-label');
+const watchForm = document.getElementById('watch-form');
+const watchInput = document.getElementById('watch-code');
+const watchNote = document.getElementById('watch-note');
+const watchParam = new URLSearchParams(location.search).get('watch');
+const watching = watchParam != null;
+const roomCode = watching ? watchCodeFromUrl() : hostRoomCode();
 
 const world = createWorld();
 const { scene, camera, buildRoot, gridGroup, targets, machine } = world;
@@ -81,10 +90,41 @@ const lastAim = new THREE.Vector3();
 let aimLayer = null;
 let challenge = null;
 let challengeMatched = false;
+let shownVerdict = 'ready';
+let relay = null;
+let watcherCount = 0;
+let watchSendTimer = 0;
+let seenWatch = false;
+let challengeKey = '';
+const remoteBricks = new Map();
+const remotePedestals = new Map();
+const posePos = new THREE.Vector3();
+const poseQuat = new THREE.Quaternion();
+let watchHands = [];
 
-machine.refreshSelection(selection);
-paintSelection();
-startChallenge(true);
+world.setRoomCode(roomCode || '----', watching ? 'WATCH' : 'ROOM');
+roomCodeEl.textContent = roomCode || '----';
+if (watching) {
+  roomLabelEl.textContent = 'Watching';
+  scalePanel.style.display = 'none';
+  watchNote.textContent = roomCode.length === 4 ? 'Connecting...' : 'Enter the 4-letter room code.';
+  setStatus('Waiting for the headset...');
+} else {
+  machine.refreshSelection(selection);
+  paintSelection();
+  startChallenge(true);
+}
+watchForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const code = watchInput.value.toUpperCase().replace(/[^A-Z2-9]/g, '').slice(0, 4);
+  if (code.length < 4) {
+    watchNote.textContent = 'Room codes are 4 letters.';
+    return;
+  }
+  const url = new URL(location.href);
+  url.searchParams.set('watch', code);
+  location.href = url.toString();
+});
 
 renderer.xr.addEventListener('sessionstart', () => {
   hudEl.style.display = 'none';
@@ -93,7 +133,7 @@ renderer.xr.addEventListener('sessionstart', () => {
 });
 renderer.xr.addEventListener('sessionend', () => {
   hudEl.style.display = '';
-  scalePanel.style.display = '';
+  if (!watching) scalePanel.style.display = '';
   controls.enabled = true;
 });
 
@@ -315,6 +355,7 @@ const verdictStatus = {
 function reviewBuild(speak) {
   if (!challenge) return false;
   const verdict = lookVerdict(cellsFromGrid(grid), challenge.cells);
+  shownVerdict = verdict;
   world.challenge.setVerdict(verdict);
   if (verdict === 'match') {
     if (!challengeMatched) {
@@ -337,10 +378,12 @@ function startChallenge(first) {
   }
   challenge = model;
   challengeMatched = false;
+  shownVerdict = 'ready';
   world.challenge.setVerdict('ready');
   showExample(model);
   if (sameLook(cellsFromGrid(grid), model.cells)) {
     challengeMatched = true;
+    shownVerdict = 'match';
     world.challenge.setVerdict('match');
     celebrateSolve();
     setStatus('You got it. Press NEW for another.');
@@ -470,6 +513,7 @@ function toggleFlat() {
 }
 
 function activateUi(owner) {
+  if (watching) return;
   if (owner.userData.restZ != null) owner.userData.press = 1;
   if (owner.userData.action === 'color') selectColor(owner.userData.value);
   else if (owner.userData.action === 'shape') selectShape(owner.userData.value);
@@ -726,6 +770,7 @@ function captureHome(brick) {
 }
 
 function grab(brick, holder, whole) {
+  if (watching) return;
   const group = whole && brick.userData.role === 'placed' ? connectedBricks(grid, brick) : [brick];
   if (group.length > 1) grabAssembly(group, brick, holder);
   else grabOne(brick, holder);
@@ -1200,6 +1245,7 @@ function hover(owner) {
 }
 
 function onPointerMove(event) {
+  if (watching) return;
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1219,6 +1265,7 @@ function onPointerMove(event) {
 }
 
 function onPointerDown(event) {
+  if (watching) return;
   if (event.button !== 0 || renderer.xr.isPresenting) return;
   const rect = renderer.domElement.getBoundingClientRect();
   pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1248,6 +1295,7 @@ function onPointerDown(event) {
 }
 
 function onPointerUp(event) {
+  if (watching) return;
   if (pegDrag) {
     pegDrag = false;
     controls.enabled = true;
@@ -1278,14 +1326,14 @@ function onPointerUp(event) {
 }
 
 function onKeyDown(event) {
-  if (event.repeat) return;
+  if (watching || event.repeat) return;
   if (event.key === 'r' || event.key === 'R') rotateHeld();
   if (event.key === 'Enter') orderSelection();
   if (event.key === 'n' || event.key === 'N') startChallenge(false);
 }
 
 function onXrTrigger(controller) {
-  if (held) return;
+  if (watching || held) return;
   const hit = hitFromController(controller);
   if (hit?.owner?.userData.action === 'peg') {
     controller.userData.pegDrag = true;
@@ -1296,7 +1344,7 @@ function onXrTrigger(controller) {
 }
 
 function onXrSqueeze(controller) {
-  if (held) return;
+  if (watching || held) return;
   const whole = triggerHeld(controller);
   const inHand = closestBrickToHand(handPoints(controller));
   if (inHand) {
@@ -1342,6 +1390,242 @@ function updateHeldXr() {
   updateSnapFromPoint(piecePoint());
 }
 
+function round3(value) {
+  return Math.round(value * 1000) / 1000;
+}
+
+function poseOf(object) {
+  object.updateWorldMatrix(true, false);
+  object.getWorldPosition(posePos);
+  object.getWorldQuaternion(poseQuat);
+  return [
+    round3(posePos.x), round3(posePos.y), round3(posePos.z),
+    round3(poseQuat.x), round3(poseQuat.y), round3(poseQuat.z), round3(poseQuat.w),
+  ];
+}
+
+function packBrick(brick, role) {
+  const data = {
+    id: brick.userData.watchId,
+    role,
+    shapeId: brick.userData.shapeId,
+    colorId: brick.userData.colorId,
+    heightId: brick.userData.heightId,
+    units: brick.userData.units,
+    flat: brick.userData.flat ? 1 : 0,
+    rot: brick.userData.rot || 0,
+  };
+  if (role === 'placed' && brick.userData.anchor) {
+    data.gx = brick.userData.anchor.gx;
+    data.gz = brick.userData.anchor.gz;
+    data.layer = brick.userData.anchor.layer;
+  } else if (role === 'supply') {
+    data.pedestalId = brick.userData.pedestalId;
+  } else {
+    data.pose = poseOf(brick);
+  }
+  return data;
+}
+
+function captureSnapshot() {
+  const bricks = [];
+  for (const item of targets) {
+    if (item.userData?.type !== 'brick') continue;
+    if (item.userData.role === 'placed' || item.userData.role === 'supply') bricks.push(packBrick(item, item.userData.role));
+  }
+  if (assembly) {
+    for (const piece of assembly.pieces) bricks.push(packBrick(piece.brick, 'held'));
+  } else if (held) bricks.push(packBrick(held, 'held'));
+  return {
+    peg: round3(pegScale),
+    verdict: shownVerdict,
+    challenge: challenge ? challenge.pieces : [],
+    pedestals: pedestals.map((item) => ({
+      id: item.id,
+      colorId: item.colorId,
+      shapeId: item.shapeId,
+      heightId: item.heightId,
+      flat: item.flat ? 1 : 0,
+      index: item.index,
+    })),
+    bricks,
+    hands: renderer.xr.isPresenting ? controllers.map((controller) => poseOf(controller)) : [],
+  };
+}
+
+function remoteBrickKey(data) {
+  return `${data.shapeId}|${data.colorId}|${data.heightId}|${data.units}|${data.flat}`;
+}
+
+function makeRemoteBrick(data) {
+  const brick = createBrick(shapeById(data.shapeId), colorById(data.colorId), {
+    units: data.units,
+    heightId: data.heightId,
+    flat: !!data.flat,
+  });
+  brick.userData.watchId = data.id;
+  brick.userData.remoteKey = remoteBrickKey(data);
+  setBrickRaycast(brick, false);
+  return brick;
+}
+
+function placeRemoteBrick(brick, data) {
+  brick.userData.rot = data.rot || 0;
+  if (data.role === 'placed') {
+    gridGroup.attach(brick);
+    const pos = brickLocalPosition(brick, { gx: data.gx, gz: data.gz, layer: data.layer, dist: 0 });
+    brick.position.set(pos.x, pos.y, pos.z);
+    brick.rotation.set(0, brick.userData.rot * Math.PI / 2, 0);
+    brick.scale.setScalar(1);
+    return;
+  }
+  if (data.role === 'supply') {
+    const pedestal = remotePedestals.get(data.pedestalId);
+    if (!pedestal) return;
+    pedestal.group.attach(brick);
+    brick.position.set(0, 0.712, 0);
+    brick.rotation.set(0, 0, 0);
+    brick.scale.setScalar(pegScale);
+    return;
+  }
+  if (!data.pose) return;
+  scene.attach(brick);
+  const [x, y, z, qx, qy, qz, qw] = data.pose;
+  brick.position.set(x, y, z);
+  brick.quaternion.set(qx, qy, qz, qw);
+  brick.scale.setScalar(pegScale);
+}
+
+function syncRemotePedestals(list) {
+  for (const data of list) {
+    let pedestal = remotePedestals.get(data.id);
+    if (!pedestal) {
+      const visual = createPedestal(data.index, partLabel(data.colorId, data.shapeId, data.heightId, !!data.flat));
+      scene.add(visual.group);
+      pedestal = { id: data.id, group: visual.group, index: data.index };
+      remotePedestals.set(data.id, pedestal);
+    }
+    if (pedestal.index !== data.index) {
+      pedestal.index = data.index;
+      const slot = pedestalSlot(data.index);
+      pedestal.group.position.set(slot.x, 0, slot.z);
+    }
+  }
+}
+
+function dropMissingPedestals(list) {
+  const seen = new Set(list.map((item) => item.id));
+  for (const [id, pedestal] of remotePedestals) {
+    if (seen.has(id)) continue;
+    const leftovers = [];
+    pedestal.group.traverse((child) => {
+      if (child.userData?.type === 'brick') leftovers.push(child);
+    });
+    for (const brick of leftovers) brick.parent?.remove(brick);
+    pedestal.group.parent?.remove(pedestal.group);
+    disposePedestalGroup(pedestal.group);
+    remotePedestals.delete(id);
+  }
+}
+
+function syncRemoteBricks(list) {
+  const seen = new Set();
+  for (const data of list) {
+    if (data.role === 'supply' && !remotePedestals.has(data.pedestalId)) continue;
+    seen.add(data.id);
+    let brick = remoteBricks.get(data.id);
+    if (!brick || brick.userData.remoteKey !== remoteBrickKey(data)) {
+      brick?.parent?.remove(brick);
+      brick = makeRemoteBrick(data);
+      remoteBricks.set(data.id, brick);
+    }
+    placeRemoteBrick(brick, data);
+  }
+  for (const [id, brick] of remoteBricks) {
+    if (seen.has(id)) continue;
+    brick.parent?.remove(brick);
+    remoteBricks.delete(id);
+  }
+}
+
+function makeWatchHand() {
+  const group = new THREE.Group();
+  const palm = new THREE.Mesh(
+    new THREE.BoxGeometry(0.07, 0.04, 0.12),
+    new THREE.MeshStandardMaterial({ color: 0xf4f1ea, roughness: 0.55 }),
+  );
+  palm.position.set(0, 0, -0.04);
+  group.add(palm);
+  const beam = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.003, 0.0012, 0.8, 6),
+    new THREE.MeshBasicMaterial({ color: 0x3ef0c4, transparent: true, opacity: 0.75 }),
+  );
+  beam.geometry.translate(0, 0.4, 0);
+  beam.rotation.x = Math.PI / 2;
+  group.add(beam);
+  group.visible = false;
+  scene.add(group);
+  return group;
+}
+
+function syncRemoteHands(hands) {
+  for (let index = 0; index < watchHands.length; index += 1) {
+    const pose = hands[index];
+    const hand = watchHands[index];
+    if (!pose) {
+      hand.visible = false;
+      continue;
+    }
+    hand.visible = true;
+    const [x, y, z, qx, qy, qz, qw] = pose;
+    hand.position.set(x, y, z);
+    hand.quaternion.set(qx, qy, qz, qw);
+  }
+}
+
+function applySnapshot(snap) {
+  if (!seenWatch) {
+    seenWatch = true;
+    watchNote.textContent = 'Live';
+    setStatus('Watching the room. Drag to look around.');
+  }
+  if (typeof snap.peg === 'number' && Math.abs(snap.peg - pegScale) > 0.001) setPegScale(snap.peg);
+  const pedestalList = snap.pedestals || [];
+  syncRemotePedestals(pedestalList);
+  syncRemoteBricks(snap.bricks || []);
+  dropMissingPedestals(pedestalList);
+  const pieces = snap.challenge || [];
+  const key = JSON.stringify(pieces);
+  if (key !== challengeKey) {
+    challengeKey = key;
+    showExample({ pieces });
+  }
+  if (snap.verdict) world.challenge.setVerdict(snap.verdict);
+  syncRemoteHands(snap.hands || []);
+}
+
+function startRelay() {
+  if (watching && roomCode.length !== 4) return;
+  if (watching) watchHands = [makeWatchHand(), makeWatchHand()];
+  try {
+    relay = openRoom(roomCode, {
+      onSnapshot(data) {
+        if (watching) applySnapshot(data);
+      },
+      onWatchers(count) {
+        watcherCount = count;
+        if (watching) return;
+        watchNote.textContent = count > 0
+          ? `${count === 1 ? '1 person is' : `${count} people are`} watching.`
+          : '';
+        if (count > 0) relay?.send(captureSnapshot());
+      },
+    });
+  } catch {
+    watchNote.textContent = 'Could not open the room.';
+  }
+}
+
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.05);
   for (let i = jobs.length - 1; i >= 0; i -= 1) {
@@ -1367,5 +1651,14 @@ function frame() {
   const pulse = 0.12 + Math.sin(performance.now() * 0.004) * 0.08;
   if (!held) machine.orderButton.material.emissiveIntensity = pulse;
   world.challenge.newButton.material.emissiveIntensity = challengeMatched ? 0.55 : pulse;
+  if (!watching && relay && watcherCount > 0) {
+    watchSendTimer += dt;
+    if (watchSendTimer >= 0.12) {
+      watchSendTimer = 0;
+      relay.send(captureSnapshot());
+    }
+  }
   renderer.render(scene, camera);
 }
+
+startRelay();

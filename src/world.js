@@ -83,6 +83,34 @@ function addBox(parent, size, position, material, targets) {
   return mesh;
 }
 
+function createRoomCard(scene) {
+  const screen = canvasTexture(512, 256, () => {});
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.5, 0.25),
+    new THREE.MeshBasicMaterial({ map: screen.texture }),
+  );
+  mesh.position.set(-0.82, 1.18, 0.18);
+  scene.add(mesh);
+
+  function setRoomCode(code, caption) {
+    const { ctx, texture, canvas } = screen;
+    ctx.fillStyle = '#1c242c';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#9eb0be';
+    ctx.font = '600 44px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(caption || 'ROOM', canvas.width / 2, 74);
+    ctx.fillStyle = '#f7f4ee';
+    ctx.font = '700 128px Segoe UI, sans-serif';
+    ctx.fillText(code || '----', canvas.width / 2, 168);
+    texture.needsUpdate = true;
+  }
+
+  setRoomCode('----', 'ROOM');
+  return { mesh, setRoomCode };
+}
+
 export function createWorld() {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xe7e1d6);
@@ -205,6 +233,7 @@ export function createWorld() {
   machine.pressables.push(challenge.newButton);
   const bin = createBin();
   scene.add(bin);
+  const roomCard = createRoomCard(scene);
 
   return {
     scene,
@@ -218,6 +247,7 @@ export function createWorld() {
     bin,
     tableTop: TABLE_TOP,
     layoutTable,
+    setRoomCode: roomCard.setRoomCode,
   };
 }
 

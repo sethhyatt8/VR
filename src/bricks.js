@@ -7,6 +7,7 @@ const STUD_RISE = STUD_H * 0.9;
 const HOLE_R = STUD * 0.34;
 const studGeometry = new THREE.CylinderGeometry(STUD * 0.29, STUD * 0.29, STUD_RISE, 16);
 const materials = new Map();
+let nextWatchId = 1;
 
 function materialFor(hex) {
   let material = materials.get(hex);
@@ -238,6 +239,7 @@ export function createBrick(shape, color, options = {}) {
     baseD: shape.d,
     kind,
     rot: 0,
+    watchId: nextWatchId++,
     pedestalId: null,
     cells: null,
     anchor: null,
