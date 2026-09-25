@@ -14,10 +14,13 @@ export const COLORS = [
   { id: 'blue', name: 'Blue', hex: 0x2b6cb0 },
   { id: 'yellow', name: 'Yellow', hex: 0xf1c40f },
   { id: 'green', name: 'Green', hex: 0x239b56 },
-  { id: 'white', name: 'White', hex: 0xf4f7f8 },
+  { id: 'white', name: 'White', hex: 0xd2c6b4 },
   { id: 'black', name: 'Black', hex: 0x222326 },
   { id: 'orange', name: 'Orange', hex: 0xe67e22 },
   { id: 'tan', name: 'Tan', hex: 0xd4a574 },
+  { id: 'pink', name: 'Pink', hex: 0xf07aaa },
+  { id: 'purple', name: 'Purple', hex: 0x7b4eab },
+  { id: 'lime', name: 'Lime', hex: 0x8fbf3a },
 ];
 
 export const SHAPES = [

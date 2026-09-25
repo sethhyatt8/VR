@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { COLORS, GRID_X, GRID_Z, HEIGHTS, SHAPES, STUD } from './config.js';
 
 const TABLE_TOP = 0.76;
+const WALL_Z = -2.68;
 
 export function pedestalSlot(index) {
   const col = index % 2;
@@ -190,6 +191,12 @@ export function createWorld() {
   scene.add(machine.group);
   const challenge = createChallengeStand(targets);
   scene.add(challenge.group);
+  scene.add(challenge.sign);
+  scene.add(challenge.newButton);
+  challenge.sign.position.set(-1.18, 1.52, WALL_Z + 0.006);
+  challenge.sign.rotation.set(0, 0, 0);
+  challenge.newButton.position.set(-0.8, 1.5, WALL_Z);
+  challenge.newButton.rotation.set(0, 0, 0);
   const bin = createBin();
   scene.add(bin);
 
@@ -211,8 +218,8 @@ export function createWorld() {
 function createMachine(targets) {
   const mount = new THREE.Group();
 
-  const openPose = { x: 0, y: 1.88, z: -1.05, tilt: -0.7, yaw: 0 };
-  const closedPose = { x: 0, y: 2.45, z: -1.2, tilt: -0.15, yaw: 0 };
+  const openPose = { x: 1.12, y: 1.58, z: WALL_Z, tilt: 0, yaw: 0 };
+  const closedPose = { x: 1.12, y: 2.72, z: WALL_Z, tilt: 0, yaw: 0 };
   const group = new THREE.Group();
   group.position.set(openPose.x, openPose.y, openPose.z);
   group.rotation.x = openPose.tilt;
@@ -245,12 +252,12 @@ function createMachine(targets) {
     clearcoatRoughness: 0.04,
     envMapIntensity: 1.2,
   });
-  addBox(group, [0.92, 0.72, 0.016], [0, 0, 0], caseMat);
-  addBox(group, [0.96, 0.014, 0.022], [0, 0.35, 0], trimMat);
+  addBox(group, [1.08, 0.72, 0.016], [0, 0, 0], caseMat);
+  addBox(group, [1.12, 0.014, 0.022], [0, 0.35, 0], trimMat);
 
   const screen = canvasTexture(512, 256, () => {});
   const screenMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.78, 0.11),
+    new THREE.PlaneGeometry(0.92, 0.11),
     new THREE.MeshBasicMaterial({ map: screen.texture }),
   );
   screenMesh.position.set(0, 0.18, 0.014);
@@ -258,7 +265,7 @@ function createMachine(targets) {
 
   const colorButtons = COLORS.map((color, index) => {
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.058, 0.058, 0.014),
+      new THREE.BoxGeometry(0.052, 0.052, 0.014),
       new THREE.MeshStandardMaterial({
         color: color.hex,
         roughness: 0.42,
@@ -266,7 +273,8 @@ function createMachine(targets) {
         emissiveIntensity: 0.18,
       }),
     );
-    mesh.position.set(-0.35 + index * 0.1, 0.06, 0.016);
+    const step = 0.088;
+    mesh.position.set(-((COLORS.length - 1) * step) / 2 + index * step, 0.06, 0.016);
     mesh.userData = { type: 'ui', action: 'color', value: color.id };
     mesh.castShadow = true;
     group.add(mesh);
@@ -400,7 +408,7 @@ function createMachine(targets) {
       roughness: 0.5,
     }),
   );
-  hideButton.position.set(0.34, 0.3, 0.016);
+  hideButton.position.set(0.42, 0.3, 0.016);
   hideButton.userData = { type: 'ui', action: 'screen' };
   group.add(hideButton);
   targets.push(hideButton);
@@ -435,15 +443,15 @@ function createMachine(targets) {
     tab.visible = openAmount < 0.92;
   }
 
-  function placeScreen(scale = 1) {
-    const far = -0.55 - (GRID_Z * STUD * scale + 0.16) / 2;
-    const standZ = far - 0.4;
-    openPose.x = 0;
-    openPose.z = standZ + 0.34;
-    closedPose.x = 0;
-    closedPose.z = standZ + 0.12;
-    tab.position.set(0.66, 1.5, standZ + 0.05);
-    tab.rotation.x = -0.45;
+  function placeScreen() {
+    openPose.x = 1.12;
+    openPose.z = WALL_Z;
+    openPose.tilt = 0;
+    closedPose.x = 1.12;
+    closedPose.z = WALL_Z;
+    closedPose.tilt = 0;
+    tab.position.set(-0.48, 1.5, WALL_Z);
+    tab.rotation.set(0, 0, 0);
     applyScreenPose();
   }
 
@@ -523,8 +531,8 @@ export function createChallengeStand(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  newButton.position.set(0.32, 1.52, 0.0);
-  newButton.rotation.x = -0.45;
+  newButton.position.set(-0.8, 1.5, 0);
+  newButton.rotation.set(0, 0, 0);
   newButton.userData = { type: 'ui', action: 'challenge' };
   newButton.castShadow = true;
   group.add(newButton);
@@ -535,8 +543,8 @@ export function createChallengeStand(targets) {
     new THREE.PlaneGeometry(0.42, 0.13),
     new THREE.MeshBasicMaterial({ map: sign.texture }),
   );
-  signMesh.position.set(-0.12, 1.56, -0.02);
-  signMesh.rotation.x = -0.62;
+  signMesh.position.set(-1.18, 1.52, 0);
+  signMesh.rotation.set(0, 0, 0);
   group.add(signMesh);
 
   const glow = new THREE.PointLight(0xd6ffe6, 0, 2.4);

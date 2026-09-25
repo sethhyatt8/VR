@@ -1058,8 +1058,10 @@ function setPegScale(next) {
   world.challenge.model.scale.setScalar(pegScale);
   const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
   world.challenge.group.position.set(0, 0, far - 0.4);
-  world.challenge.sign.position.set(-0.12, 1.56, -0.02);
-  world.challenge.newButton.position.set(0.32, 1.52, 0);
+  world.challenge.sign.position.set(-1.18, 1.52, -2.674);
+  world.challenge.sign.rotation.set(0, 0, 0);
+  world.challenge.newButton.position.set(-0.8, 1.5, -2.68);
+  world.challenge.newButton.rotation.set(0, 0, 0);
   const side = (GRID_X * STUD * pegScale + 0.16) / 2;
   world.bin.position.set(-(side + 0.34), 0, -0.42);
   if (assembly) assembly.carry.scale.setScalar(inBuild(assembly.carry) ? 1 : pegScale);
