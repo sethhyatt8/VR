@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XRButton } from 'three/addons/webxr/XRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { createBrick, makeGhost, setBrickRaycast } from './bricks.js';
-import { cellsFromGrid, generateModel, sameLook } from './challenge.js';
+import { cellsFromGrid, generateModel, lookVerdict, sameLook } from './challenge.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, heightById, LAYER, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
 import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
 import { createPedestal, createWorld } from './world.js';
@@ -241,12 +241,7 @@ function playClear() {
 
 function clearExample() {
   const { bricks } = world.challenge;
-  for (const child of [...bricks.children]) {
-    child.traverse((obj) => {
-      if (obj.isMesh && obj.material) obj.material.dispose();
-    });
-    bricks.remove(child);
-  }
+  for (const child of [...bricks.children]) bricks.remove(child);
 }
 
 function showExample(model) {
@@ -268,18 +263,29 @@ function showExample(model) {
   }
 }
 
-function reviewBuild() {
+const verdictStatus = {
+  ready: 'Match the build on your left. Any turn is fine, and a mirror counts.',
+  match: 'That matches. Press NEW on the left for another.',
+  extra: 'Extra bricks are still on the table. Drop them in the TOSS bin.',
+  short: 'Still missing some. Any turn is fine, and a mirror counts.',
+  different: 'Colors or heights still differ. Any turn is fine, and a mirror counts.',
+};
+
+function reviewBuild(speak) {
   if (!challenge) return false;
-  const matched = sameLook(cellsFromGrid(grid), challenge.cells);
-  world.challenge.setMatched(matched);
-  if (matched && !challengeMatched) {
-    challengeMatched = true;
-    playClear();
-    setStatus('That matches. Press NEW on the left for another.');
-  } else if (!matched) {
-    challengeMatched = false;
+  const verdict = lookVerdict(cellsFromGrid(grid), challenge.cells);
+  world.challenge.setVerdict(verdict);
+  if (verdict === 'match') {
+    if (!challengeMatched) {
+      challengeMatched = true;
+      playClear();
+      setStatus(verdictStatus.match);
+    }
+    return true;
   }
-  return matched;
+  challengeMatched = false;
+  if (speak && verdict !== 'ready') setStatus(verdictStatus[verdict]);
+  return false;
 }
 
 function startChallenge(first) {
@@ -290,11 +296,11 @@ function startChallenge(first) {
   }
   challenge = model;
   challengeMatched = false;
-  world.challenge.setMatched(false);
+  world.challenge.setVerdict('ready');
   showExample(model);
   if (sameLook(cellsFromGrid(grid), model.cells)) {
     challengeMatched = true;
-    world.challenge.setMatched(true);
+    world.challenge.setVerdict('match');
     playClear();
     setStatus('That already matches. Press NEW on the left for another.');
     return;
@@ -636,7 +642,7 @@ function grabOne(brick, holder) {
 
   if (fromSupply && pedestal) pedestal.supply = null;
   setStatus(`Holding ${brickLabel(brick)}. Let go to drop it.`);
-  reviewBuild();
+  reviewBuild(false);
 }
 
 function grabAssembly(bricks, primary, holder) {
@@ -674,7 +680,7 @@ function grabAssembly(bricks, primary, holder) {
   assembly = { pieces, carry };
   if (ghost) ghost.visible = false;
   setStatus(`Holding ${pieces.length} connected bricks. Let go to drop them.`);
-  reviewBuild();
+  reviewBuild(false);
 }
 
 function pieceRecords() {
@@ -749,7 +755,7 @@ function placeAssembly() {
   carry.parent?.remove(carry);
   playSnap();
   setStatus(`Placed ${count} bricks.`);
-  reviewBuild();
+  reviewBuild(true);
   return true;
 }
 
@@ -779,7 +785,7 @@ function placeSingle() {
   }
   playSnap();
   setStatus(`Placed ${brickLabel(brick)}.`);
-  reviewBuild();
+  reviewBuild(true);
   return true;
 }
 
@@ -821,7 +827,7 @@ function restoreHeld() {
     for (const piece of pieces) restoreBrick(piece.brick, piece.home);
     carry.parent?.remove(carry);
     setStatus('Dropped it back where it was.');
-    reviewBuild();
+    reviewBuild(true);
     return;
   }
   if (held && heldHome) {
@@ -832,15 +838,103 @@ function restoreHeld() {
     heldHome = null;
     restoreBrick(brick, home);
     setStatus('Dropped it back where it was.');
-    reviewBuild();
+    reviewBuild(true);
   }
   held = null;
   heldFrom = null;
   heldHome = null;
 }
 
+function pieceWorld() {
+  const point = new THREE.Vector3();
+  (assembly ? assembly.carry : held).getWorldPosition(point);
+  return point;
+}
+
+function shouldToss(point) {
+  const bin = new THREE.Vector3();
+  world.bin.getWorldPosition(bin);
+  const overBin = point.x - bin.x;
+  const overBinZ = point.z - bin.z;
+  if (overBin * overBin + overBinZ * overBinZ < 0.22 * 0.22 && point.y < bin.y + 1.1) return true;
+  localPoint.copy(point);
+  gridGroup.worldToLocal(localPoint);
+  const margin = STUD * 6;
+  const outside = localPoint.x < -margin || localPoint.z < -margin
+    || localPoint.x > GRID_X * STUD + margin
+    || localPoint.z > GRID_Z * STUD + margin;
+  return outside && !held.userData.snap;
+}
+
+function playToss() {
+  const ctx = audio();
+  const t = ctx.currentTime;
+  const noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.16), ctx.sampleRate);
+  const data = noise.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+  const burst = ctx.createBufferSource();
+  burst.buffer = noise;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(900, t);
+  filter.frequency.exponentialRampToValueAtTime(220, t + 0.16);
+  burst.connect(filter);
+  filter.connect(envGain(ctx, t, 0.2, 0.01, 0.16));
+  burst.start(t);
+  burst.stop(t + 0.16);
+}
+
+function flingBrick(brick) {
+  scene.attach(brick);
+  brick.userData.role = 'tossed';
+  brick.userData.snap = null;
+  setBrickRaycast(brick, false);
+  const index = targets.indexOf(brick);
+  if (index >= 0) targets.splice(index, 1);
+  const start = brick.position.clone();
+  const vx = (Math.random() - 0.5) * 0.35;
+  const vz = 0.15 + Math.random() * 0.25;
+  jobs.push({
+    t: 0,
+    d: 0.62,
+    update(k) {
+      brick.position.set(start.x + vx * k, start.y + 0.28 * k - k * k * 1.5, start.z + vz * k);
+      brick.rotation.x += 0.12;
+      brick.rotation.z += 0.08;
+      if (k >= 1) brick.parent?.remove(brick);
+    },
+  });
+}
+
+function tossHeld() {
+  const pieces = assembly
+    ? assembly.pieces.map((piece) => ({ brick: piece.brick, home: piece.home }))
+    : [{ brick: held, home: heldHome }];
+  const carry = assembly?.carry || null;
+  const count = pieces.length;
+  assembly = null;
+  held = null;
+  heldFrom = null;
+  heldHome = null;
+  for (const piece of pieces) {
+    flingBrick(piece.brick);
+    if (piece.home?.role !== 'supply') continue;
+    const pedestal = pedestals.find((item) => item.id === piece.home.pedestalId);
+    if (pedestal && !pedestal.supply) refill(pedestal, true);
+  }
+  carry?.parent?.remove(carry);
+  playToss();
+  setStatus(count > 1 ? `Tossed ${count} bricks.` : 'Tossed it away.');
+  reviewBuild(true);
+}
+
 function releaseHeld() {
   if (!held) return;
+  if (shouldToss(pieceWorld())) {
+    tossHeld();
+    discardGhost();
+    return;
+  }
   const placed = assembly ? placeAssembly() : placeSingle();
   if (!placed) restoreHeld();
   discardGhost();

@@ -190,6 +190,8 @@ export function createWorld() {
   scene.add(machine.group);
   const challenge = createChallengeStand(targets);
   scene.add(challenge.group);
+  const bin = createBin();
+  scene.add(bin);
 
   return {
     scene,
@@ -200,6 +202,7 @@ export function createWorld() {
     targets,
     machine,
     challenge,
+    bin,
     tableTop: TABLE_TOP,
     layoutTable,
   };
@@ -505,6 +508,7 @@ export function createChallengeStand(targets) {
   group.add(signMesh);
 
   let matched = false;
+  let shown = 'ready';
 
   function paint(headline, detail) {
     const { ctx, texture, canvas } = sign;
@@ -521,17 +525,67 @@ export function createChallengeStand(targets) {
     texture.needsUpdate = true;
   }
 
-  function setMatched(next) {
-    if (next === matched) return;
-    matched = next;
+  const verdictCopy = {
+    ready: ['Match this', 'Any turn is fine'],
+    match: ['It matches', 'Press NEW'],
+    extra: ['Match this', 'Toss the extra bricks'],
+    short: ['Match this', 'Still missing some'],
+    different: ['Match this', 'Check colors and heights'],
+  };
+
+  function setVerdict(verdict) {
+    if (verdict === shown) return;
+    shown = verdict;
+    matched = verdict === 'match';
+    const [headline, detail] = verdictCopy[verdict] || verdictCopy.ready;
     topMat.emissive.setHex(matched ? 0x1f7a45 : 0x000000);
     topMat.emissiveIntensity = matched ? 0.45 : 0;
-    paint(matched ? 'It matches' : 'Match this', matched ? 'Press NEW' : 'Colors and heights');
+    paint(headline, detail);
   }
 
-  paint('Match this', 'Colors and heights');
+  paint('Match this', 'Any turn is fine');
 
-  return { group, model, bricks, newButton, sign: signMesh, setMatched };
+  return { group, model, bricks, newButton, sign: signMesh, setVerdict };
+}
+
+function createBin() {
+  const group = new THREE.Group();
+  group.position.set(-0.18, 0, 0.28);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x2c333a, roughness: 0.72, metalness: 0.08 });
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.5, 16), mat);
+  post.position.y = 0.25;
+  post.castShadow = true;
+  group.add(post);
+  const wall = (w, h, d, x, y, z) => {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  };
+  const span = 0.28;
+  const lip = 0.58;
+  wall(span, 0.018, span, 0, lip, 0);
+  wall(0.018, 0.16, span, -span / 2, lip + 0.08, 0);
+  wall(0.018, 0.16, span, span / 2, lip + 0.08, 0);
+  wall(span, 0.16, 0.018, 0, lip + 0.08, -span / 2);
+  wall(span + 0.018, 0.16, 0.018, 0, lip + 0.08, span / 2);
+  const label = canvasTexture(256, 128, (ctx, w, h) => {
+    ctx.fillStyle = '#1c242c';
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#f4f7f8';
+    ctx.font = '700 72px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('TOSS', w / 2, h / 2);
+  }).texture;
+  const sign = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.18, 0.09),
+    new THREE.MeshBasicMaterial({ map: label }),
+  );
+  sign.position.set(0, lip + 0.2, span / 2 + 0.012);
+  group.add(sign);
+  return group;
 }
 
 export function createPedestal(index, label) {

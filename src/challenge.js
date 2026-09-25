@@ -202,13 +202,27 @@ export function lookKey(cells, rot = 0) {
     .join('|');
 }
 
+function mirrorCells(cells) {
+  return cells.map((cell) => ({ x: -cell.x, z: cell.z, layer: cell.layer, color: cell.color }));
+}
+
 export function sameLook(built, target) {
   if (!built.length || built.length !== target.length) return false;
   const goal = lookKey(target, 0);
+  const mirrored = lookKey(mirrorCells(target), 0);
   for (let rot = 0; rot < 4; rot += 1) {
-    if (lookKey(built, rot) === goal) return true;
+    const key = lookKey(built, rot);
+    if (key === goal || key === mirrored) return true;
   }
   return false;
+}
+
+export function lookVerdict(built, target) {
+  if (!built.length) return 'ready';
+  if (sameLook(built, target)) return 'match';
+  if (built.length > target.length) return 'extra';
+  if (built.length < target.length) return 'short';
+  return 'different';
 }
 
 export function cellsFromGrid(grid) {
