@@ -83,7 +83,7 @@ let challenge = null;
 let challengeMatched = false;
 
 machine.refreshSelection(selection);
-paintSelection('Press ORDER to dispense');
+paintSelection();
 startChallenge(true);
 
 renderer.xr.addEventListener('sessionstart', () => {
@@ -244,8 +244,9 @@ function brickLabel(brick) {
   return partLabel(brick.userData.colorId, brick.userData.shapeId, brick.userData.heightId, brick.userData.flat);
 }
 
-function paintSelection(detail) {
-  machine.paintScreen(chosenLabel(), detail);
+function paintSelection() {
+  machine.paintScreen(chosenLabel());
+  machine.showPreview(selection);
 }
 
 function playClear() {
@@ -444,8 +445,8 @@ function placementPoint() {
 
 function showSelection() {
   machine.refreshSelection(selection);
-  paintSelection('Press ORDER to dispense');
-  setStatus(`${chosenLabel()} is selected. Press ORDER.`);
+  paintSelection();
+  setStatus(`${chosenLabel()} is selected. Press to order.`);
 }
 
 function selectColor(colorId) {
@@ -492,7 +493,7 @@ function orderSelection() {
   if (existing) {
     flash(existing.top);
     const label = chosenLabel();
-    paintSelection('Already on a pedestal');
+    paintSelection();
     setStatus(`${label} is already out.`);
     return existing;
   }
@@ -503,7 +504,7 @@ function orderSelection() {
   const pedestal = spawnPedestal(selection);
   const label = chosenLabel();
   playDispense();
-  paintSelection('Dispensed');
+  paintSelection();
   setStatus(`${label} is on a pedestal.`);
   return pedestal;
 }

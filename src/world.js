@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { COLORS, GRID_X, GRID_Z, HEIGHTS, SHAPES, STUD } from './config.js';
+import { createBrick, setBrickRaycast } from './bricks.js';
+import { colorById, COLORS, GRID_X, GRID_Z, heightById, HEIGHTS, shapeById, SHAPES, STUD } from './config.js';
 
 const TABLE_TOP = 0.76;
 const WALL_Z = -2.68;
@@ -231,7 +232,7 @@ function createMachine(targets) {
   group.scale.set(1.22, 1.22, 1);
   mount.add(group);
   const pressables = [];
-  function trackPress(mesh, restZ = 0.038) {
+  function trackPress(mesh, restZ = 0.078) {
     mesh.position.z = restZ;
     mesh.userData.restZ = restZ;
     mesh.userData.press = 0;
@@ -266,20 +267,43 @@ function createMachine(targets) {
     clearcoatRoughness: 0.04,
     envMapIntensity: 1.2,
   });
-  addBox(group, [1.62, 1.44, 0.016], [0, 0, 0], caseMat);
-  addBox(group, [1.66, 0.018, 0.022], [0, 0.7, 0], trimMat);
+  const panelW = 2.08;
+  const panelH = 2.2;
+  const panelBottom = -0.72;
+  const panelMidY = panelBottom + panelH / 2;
+  addBox(group, [panelW, panelH, 0.022], [0, panelMidY, 0], caseMat);
+  addBox(group, [panelW + 0.04, 0.022, 0.03], [0, panelBottom + panelH - 0.02, 0], trimMat);
 
-  const screen = canvasTexture(640, 220, () => {});
+  const orderButton = new THREE.Mesh(
+    new THREE.BoxGeometry(1.86, 0.52, 0.11),
+    new THREE.MeshStandardMaterial({
+      color: 0x1f7a45,
+      roughness: 0.42,
+      emissive: 0x1f7a45,
+      emissiveIntensity: 0.2,
+    }),
+  );
+  orderButton.position.set(0, 0.86, 0.02);
+  orderButton.userData = { type: 'ui', action: 'order' };
+  orderButton.castShadow = true;
+  trackPress(orderButton, 0.095);
+  group.add(orderButton);
+  targets.push(orderButton);
+
+  const screen = canvasTexture(768, 320, () => {});
   const screenMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.4, 0.32),
+    new THREE.PlaneGeometry(1.76, 0.44),
     new THREE.MeshBasicMaterial({ map: screen.texture }),
   );
-  screenMesh.position.set(0, 0.4, 0.014);
-  group.add(screenMesh);
+  screenMesh.position.set(0.08, 0, 0.058);
+  orderButton.add(screenMesh);
+  const previewRoot = new THREE.Group();
+  previewRoot.position.set(-0.62, 0.02, 0.12);
+  orderButton.add(previewRoot);
 
   const colorButtons = COLORS.map((color, index) => {
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.078, 0.078, 0.044),
+      new THREE.BoxGeometry(0.2, 0.2, 0.1),
       new THREE.MeshStandardMaterial({
         color: color.hex,
         roughness: 0.42,
@@ -287,8 +311,12 @@ function createMachine(targets) {
         emissiveIntensity: 0.18,
       }),
     );
-    const step = 0.13;
-    mesh.position.set(-((COLORS.length - 1) * step) / 2 + index * step, 0.12, 0.016);
+    const col = index % 6;
+    const row = Math.floor(index / 6);
+    const rowCount = row === 0 ? Math.min(6, COLORS.length) : COLORS.length - 6;
+    const step = 0.31;
+    const origin = -((rowCount - 1) * step) / 2;
+    mesh.position.set(origin + col * step, row === 0 ? 0.4 : 0.16, 0.02);
     mesh.userData = { type: 'ui', action: 'color', value: color.id };
     mesh.castShadow = true;
     trackPress(mesh);
@@ -301,7 +329,7 @@ function createMachine(targets) {
     const col = index % 5;
     const row = Math.floor(index / 5);
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.26, 0.09, 0.044),
+      new THREE.BoxGeometry(0.26, 0.09, 0.09),
       new THREE.MeshStandardMaterial({
         map: buttonTexture(shape.button || shape.name, '#243038', '#f4f7f8'),
         roughness: 0.5,
@@ -320,7 +348,7 @@ function createMachine(targets) {
 
   const heightButtons = HEIGHTS.map((height, index) => {
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.18, 0.08, 0.044),
+      new THREE.BoxGeometry(0.18, 0.08, 0.09),
       new THREE.MeshStandardMaterial({
         map: buttonTexture(height.label, '#243038', '#f4f7f8'),
         roughness: 0.5,
@@ -328,7 +356,7 @@ function createMachine(targets) {
         emissiveIntensity: 0,
       }),
     );
-    mesh.position.set(-0.64 + index * 0.22, -0.38, 0.016);
+    mesh.position.set(-0.55 + index * 0.28, -0.38, 0.02);
     mesh.userData = { type: 'ui', action: 'height', value: height.id };
     mesh.castShadow = true;
     trackPress(mesh);
@@ -338,7 +366,7 @@ function createMachine(targets) {
   });
 
   const flatButton = new THREE.Mesh(
-    new THREE.BoxGeometry(0.2, 0.08, 0.044),
+    new THREE.BoxGeometry(0.22, 0.08, 0.09),
     new THREE.MeshStandardMaterial({
       map: buttonTexture('FLAT', '#243038', '#f4f7f8'),
       roughness: 0.5,
@@ -346,28 +374,12 @@ function createMachine(targets) {
       emissiveIntensity: 0,
     }),
   );
-  flatButton.position.set(0.12, -0.38, 0.016);
+  flatButton.position.set(0.42, -0.38, 0.02);
   flatButton.userData = { type: 'ui', action: 'top' };
   flatButton.castShadow = true;
   trackPress(flatButton);
   group.add(flatButton);
   targets.push(flatButton);
-
-  const orderButton = new THREE.Mesh(
-    new THREE.BoxGeometry(0.32, 0.09, 0.048),
-    new THREE.MeshStandardMaterial({
-      map: buttonTexture('ORDER', '#1f7a45', '#f4fff7'),
-      roughness: 0.45,
-      emissive: 0x1f7a45,
-      emissiveIntensity: 0.15,
-    }),
-  );
-  orderButton.position.set(0.48, -0.38, 0.018);
-  orderButton.userData = { type: 'ui', action: 'order' };
-  orderButton.castShadow = true;
-  trackPress(orderButton);
-  group.add(orderButton);
-  targets.push(orderButton);
 
   const pegTrack = new THREE.Mesh(
     new THREE.BoxGeometry(1.0, 0.09, 0.016),
@@ -403,31 +415,47 @@ function createMachine(targets) {
     pegKnob.position.x = -0.42 + t * 0.84;
   }
 
-  function paintScreen(headline, detail) {
+  function paintScreen(label) {
     const { ctx, texture, canvas } = screen;
-    ctx.fillStyle = '#10161c';
+    ctx.fillStyle = '#1c6e3e';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#8fd0ff';
-    ctx.font = '600 28px Segoe UI, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('PARTS', canvas.width / 2, canvas.height * 0.22);
-    ctx.fillStyle = '#f7f4ee';
-    ctx.font = headline.length > 18 ? '700 42px Segoe UI, sans-serif' : '700 64px Segoe UI, sans-serif';
-    ctx.fillText(headline, canvas.width / 2, canvas.height * 0.52);
-    ctx.fillStyle = '#b7c4ce';
-    ctx.font = '500 32px Segoe UI, sans-serif';
-    ctx.fillText(detail, canvas.width / 2, canvas.height * 0.8);
+    ctx.fillStyle = '#d7ecdf';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = label.length > 18 ? '600 30px Segoe UI, sans-serif' : '600 36px Segoe UI, sans-serif';
+    ctx.fillText(label, canvas.width * 0.4, canvas.height * 0.36);
+    ctx.fillStyle = '#f7fff8';
+    ctx.font = '700 64px Segoe UI, sans-serif';
+    ctx.fillText('Press to order', canvas.width * 0.4, canvas.height * 0.68);
     texture.needsUpdate = true;
   }
 
+  function showPreview(selection) {
+    while (previewRoot.children.length) previewRoot.remove(previewRoot.children[0]);
+    const shape = shapeById(selection.shapeId);
+    const color = colorById(selection.colorId);
+    const height = heightById(selection.heightId);
+    const brick = createBrick(shape, color, {
+      units: height.units,
+      flat: selection.flat,
+      heightId: selection.heightId,
+    });
+    setBrickRaycast(brick, false);
+    brick.userData.type = 'preview';
+    const span = Math.max(shape.w, shape.d) * STUD;
+    brick.scale.setScalar(Math.min(3.2, 0.36 / span));
+    brick.rotation.set(-0.72, 0.62, 0.04);
+    previewRoot.add(brick);
+  }
+
   const hideButton = new THREE.Mesh(
-    new THREE.BoxGeometry(0.24, 0.08, 0.046),
+    new THREE.BoxGeometry(0.26, 0.09, 0.09),
     new THREE.MeshStandardMaterial({
       map: buttonTexture('HIDE', '#3a4652', '#f4f7f8'),
       roughness: 0.5,
     }),
   );
-  hideButton.position.set(0.64, 0.62, 0.016);
+  hideButton.position.set(0.84, 1.28, 0.02);
   hideButton.userData = { type: 'ui', action: 'screen' };
   trackPress(hideButton);
   group.add(hideButton);
@@ -490,7 +518,7 @@ function createMachine(targets) {
     for (const mesh of pressables) {
       let press = mesh.userData.press || 0;
       if (press > 0) mesh.userData.press = Math.max(0, press - dt * 3.4);
-      mesh.position.z = mesh.userData.restZ - (mesh.userData.press || 0) * 0.028;
+      mesh.position.z = mesh.userData.restZ - (mesh.userData.press || 0) * 0.046;
     }
   }
 
@@ -514,7 +542,7 @@ function createMachine(targets) {
 
   placeScreen(1);
 
-  return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob, toggleScreen, update, placeScreen, pressables };
+  return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, showPreview, refreshSelection, setPegKnob, toggleScreen, update, placeScreen, pressables };
 }
 
 export function createChallengeStand(targets) {
