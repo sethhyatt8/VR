@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XRButton } from 'three/addons/webxr/XRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { createBrick, makeGhost, setBrickRaycast } from './bricks.js';
+import { cellsFromGrid, generateModel, sameLook } from './challenge.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, heightById, LAYER, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
 import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
 import { createPedestal, createWorld } from './world.js';
@@ -66,10 +67,12 @@ const yawQuat = new THREE.Quaternion();
 const yawEuler = new THREE.Euler();
 const lastAim = new THREE.Vector3();
 let aimLayer = null;
+let challenge = null;
+let challengeMatched = false;
 
 machine.refreshSelection(selection);
 paintSelection('Press ORDER to dispense');
-setStatus(`${partLabel(selection.colorId, selection.shapeId, selection.heightId, selection.flat)} is selected. Press ORDER.`);
+startChallenge(true);
 
 renderer.xr.addEventListener('sessionstart', () => {
   hudEl.style.display = 'none';
@@ -223,6 +226,84 @@ function paintSelection(detail) {
   machine.paintScreen(chosenLabel(), detail);
 }
 
+function playClear() {
+  const ctx = audio();
+  const t = ctx.currentTime;
+  [523, 659, 784].forEach((freq, index) => {
+    const tone = ctx.createOscillator();
+    tone.type = 'sine';
+    tone.frequency.value = freq;
+    tone.connect(envGain(ctx, t + index * 0.09, 0.08, 0.01, 0.22));
+    tone.start(t + index * 0.09);
+    tone.stop(t + index * 0.09 + 0.28);
+  });
+}
+
+function clearExample() {
+  const { bricks } = world.challenge;
+  for (const child of [...bricks.children]) {
+    child.traverse((obj) => {
+      if (obj.isMesh && obj.material) obj.material.dispose();
+    });
+    bricks.remove(child);
+  }
+}
+
+function showExample(model) {
+  clearExample();
+  for (const piece of model.pieces) {
+    const brick = createBrick(shapeById(piece.shapeId), colorById(piece.colorId), {
+      units: piece.units,
+      heightId: piece.heightId,
+      flat: false,
+    });
+    brick.userData.rot = piece.rot;
+    brick.userData.role = 'example';
+    const { w, d } = footprintOf(brick);
+    brick.position.set((piece.gx + w / 2) * STUD, piece.layer * LAYER, (piece.gz + d / 2) * STUD);
+    brick.rotation.y = piece.rot * Math.PI / 2;
+    brick.scale.setScalar(1);
+    setBrickRaycast(brick, false);
+    world.challenge.bricks.add(brick);
+  }
+}
+
+function reviewBuild() {
+  if (!challenge) return false;
+  const matched = sameLook(cellsFromGrid(grid), challenge.cells);
+  world.challenge.setMatched(matched);
+  if (matched && !challengeMatched) {
+    challengeMatched = true;
+    playClear();
+    setStatus('That matches. Press NEW on the left for another.');
+  } else if (!matched) {
+    challengeMatched = false;
+  }
+  return matched;
+}
+
+function startChallenge(first) {
+  const model = generateModel();
+  if (!model) {
+    setStatus('Could not make a build. Press NEW to try again.');
+    return;
+  }
+  challenge = model;
+  challengeMatched = false;
+  world.challenge.setMatched(false);
+  showExample(model);
+  if (sameLook(cellsFromGrid(grid), model.cells)) {
+    challengeMatched = true;
+    world.challenge.setMatched(true);
+    playClear();
+    setStatus('That already matches. Press NEW on the left for another.');
+    return;
+  }
+  setStatus(first
+    ? `${chosenLabel()} is selected. Match the build on your left. Press NEW for another.`
+    : 'New build on your left. Match the colors and the heights.');
+}
+
 function ownerOf(object) {
   let current = object;
   while (current) {
@@ -330,6 +411,7 @@ function activateUi(owner) {
   else if (owner.userData.action === 'height') selectHeight(owner.userData.value);
   else if (owner.userData.action === 'top') toggleFlat();
   else if (owner.userData.action === 'order') orderSelection();
+  else if (owner.userData.action === 'challenge') startChallenge(false);
   else if (owner.userData.action === 'screen') {
     const open = machine.toggleScreen();
     setStatus(open ? 'Order screen is down.' : 'Order screen is tucked away. Press PARTS to bring it back.');
@@ -554,6 +636,7 @@ function grabOne(brick, holder) {
 
   if (fromSupply && pedestal) pedestal.supply = null;
   setStatus(`Holding ${brickLabel(brick)}. Let go to drop it.`);
+  reviewBuild();
 }
 
 function grabAssembly(bricks, primary, holder) {
@@ -591,6 +674,7 @@ function grabAssembly(bricks, primary, holder) {
   assembly = { pieces, carry };
   if (ghost) ghost.visible = false;
   setStatus(`Holding ${pieces.length} connected bricks. Let go to drop them.`);
+  reviewBuild();
 }
 
 function pieceRecords() {
@@ -665,6 +749,7 @@ function placeAssembly() {
   carry.parent?.remove(carry);
   playSnap();
   setStatus(`Placed ${count} bricks.`);
+  reviewBuild();
   return true;
 }
 
@@ -694,6 +779,7 @@ function placeSingle() {
   }
   playSnap();
   setStatus(`Placed ${brickLabel(brick)}.`);
+  reviewBuild();
   return true;
 }
 
@@ -735,6 +821,7 @@ function restoreHeld() {
     for (const piece of pieces) restoreBrick(piece.brick, piece.home);
     carry.parent?.remove(carry);
     setStatus('Dropped it back where it was.');
+    reviewBuild();
     return;
   }
   if (held && heldHome) {
@@ -745,6 +832,7 @@ function restoreHeld() {
     heldHome = null;
     restoreBrick(brick, home);
     setStatus('Dropped it back where it was.');
+    reviewBuild();
   }
   held = null;
   heldFrom = null;
@@ -842,6 +930,10 @@ function setPegScale(next) {
   }
   syncBrickScale(held);
   syncBrickScale(ghost);
+  world.challenge.model.scale.setScalar(pegScale);
+  const edge = 8 * STUD * pegScale / 2;
+  world.challenge.sign.position.set(-0.22, 1.14, -edge - 0.1);
+  world.challenge.newButton.position.set(0.2, 1.1, -edge - 0.06);
   if (assembly) assembly.carry.scale.setScalar(inBuild(assembly.carry) ? 1 : pegScale);
   pegReadout.textContent = `${(STUD * pegScale * 100).toFixed(1)} cm`;
   if (document.activeElement !== pegInput) pegInput.value = String(pegScale);
@@ -953,6 +1045,7 @@ function onKeyDown(event) {
   if (event.repeat) return;
   if (event.key === 'r' || event.key === 'R') rotateHeld();
   if (event.key === 'Enter') orderSelection();
+  if (event.key === 'n' || event.key === 'N') startChallenge(false);
 }
 
 function onXrTrigger(controller) {
@@ -1035,5 +1128,6 @@ function frame() {
   }
   const pulse = 0.12 + Math.sin(performance.now() * 0.004) * 0.08;
   if (!held) machine.orderButton.material.emissiveIntensity = pulse;
+  world.challenge.newButton.material.emissiveIntensity = challengeMatched ? 0.55 : pulse;
   renderer.render(scene, camera);
 }

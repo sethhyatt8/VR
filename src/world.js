@@ -188,6 +188,8 @@ export function createWorld() {
 
   const machine = createMachine(targets);
   scene.add(machine.group);
+  const challenge = createChallengeStand(targets);
+  scene.add(challenge.group);
 
   return {
     scene,
@@ -197,6 +199,7 @@ export function createWorld() {
     plate,
     targets,
     machine,
+    challenge,
     tableTop: TABLE_TOP,
     layoutTable,
   };
@@ -443,6 +446,92 @@ function createMachine(targets) {
   }
 
   return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob, toggleScreen, update };
+}
+
+export function createChallengeStand(targets) {
+  const group = new THREE.Group();
+  group.position.set(-1.02, 0, 0.08);
+
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a34, roughness: 0.78 });
+  const woodDark = new THREE.MeshStandardMaterial({ color: 0x5c3b22, roughness: 0.8 });
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.74, 18), woodDark);
+  post.position.y = 0.37;
+  post.castShadow = true;
+  group.add(post);
+
+  const plateSize = 8 * STUD;
+  const model = new THREE.Group();
+  model.position.y = 0.78;
+  group.add(model);
+
+  const topMat = new THREE.MeshStandardMaterial({ color: 0xc5ced8, roughness: 0.82, emissive: 0x000000, emissiveIntensity: 0 });
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(plateSize, 0.02, plateSize), topMat);
+  plate.position.y = -0.01;
+  plate.receiveShadow = true;
+  model.add(plate);
+
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(plateSize + 0.08, 0.04, plateSize + 0.08), wood);
+  deck.position.y = -0.04;
+  deck.castShadow = true;
+  deck.receiveShadow = true;
+  model.add(deck);
+
+  const bricks = new THREE.Group();
+  bricks.position.set(-plateSize / 2, 0, -plateSize / 2);
+  model.add(bricks);
+
+  const newButton = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.07, 0.02),
+    new THREE.MeshStandardMaterial({
+      map: buttonTexture('NEW', '#1f7a45', '#f4fff7'),
+      roughness: 0.45,
+      emissive: 0x1f7a45,
+      emissiveIntensity: 0.15,
+    }),
+  );
+  newButton.position.set(0.2, 1.1, -plateSize / 2 - 0.06);
+  newButton.userData = { type: 'ui', action: 'challenge' };
+  newButton.castShadow = true;
+  group.add(newButton);
+  targets.push(newButton);
+
+  const sign = canvasTexture(512, 160, () => {});
+  const signMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.42, 0.13),
+    new THREE.MeshBasicMaterial({ map: sign.texture }),
+  );
+  signMesh.position.set(0, 1.08, -plateSize / 2 - 0.16);
+  signMesh.rotation.x = -0.42;
+  group.add(signMesh);
+
+  let matched = false;
+
+  function paint(headline, detail) {
+    const { ctx, texture, canvas } = sign;
+    ctx.fillStyle = '#1c242c';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = matched ? '#8ee0ad' : '#8fd0ff';
+    ctx.font = '700 58px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(headline, canvas.width / 2, 58);
+    ctx.fillStyle = '#d5dde4';
+    ctx.font = '500 32px Segoe UI, sans-serif';
+    ctx.fillText(detail, canvas.width / 2, 112);
+    texture.needsUpdate = true;
+  }
+
+  function setMatched(next) {
+    if (next === matched) return;
+    matched = next;
+    topMat.emissive.setHex(matched ? 0x1f7a45 : 0x000000);
+    topMat.emissiveIntensity = matched ? 0.45 : 0;
+    paint(matched ? 'It matches' : 'Match this', matched ? 'Press NEW' : 'Colors and heights');
+  }
+
+  paint('Match this', 'Colors and heights');
+
+  return { group, model, bricks, newButton, sign: signMesh, setMatched };
 }
 
 export function createPedestal(index, label) {
