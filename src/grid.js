@@ -1,4 +1,4 @@
-import { GRID_X, GRID_Z, HEIGHT, MAX_LAYER, STUD } from './config.js';
+import { GRID_X, GRID_Z, LAYER, MAX_LAYER, STUD } from './config.js';
 
 export function cellKey(x, z, layer) {
   return `${x},${z},${layer}`;
@@ -38,7 +38,7 @@ export function layoutOf(brick, rot = brick.userData.rot || 0) {
       raw.push({
         x,
         z,
-        stud: kind !== 'slope' || iz === bd - 1,
+        stud: !brick.userData.flat && (kind !== 'slope' || iz === bd - 1),
         foot: kind !== 'wall' || iz === 0,
       });
     }
@@ -72,11 +72,18 @@ export function columnTop(grid, gx, gz) {
   return null;
 }
 
+export function brickUnits(brick) {
+  return brick.userData.units || 4;
+}
+
 export function canPlace(grid, brick, gx, gz, layer) {
-  if (layer < 0 || layer > MAX_LAYER) return false;
+  const units = brickUnits(brick);
+  if (layer < 0 || layer + units - 1 > MAX_LAYER) return false;
   const cells = layoutOf(brick);
   for (const cell of cells) {
-    if (grid.has(cellKey(gx + cell.x, gz + cell.z, layer))) return false;
+    for (let step = 0; step < units; step += 1) {
+      if (grid.has(cellKey(gx + cell.x, gz + cell.z, layer + step))) return false;
+    }
   }
   let supported = 0;
   for (const cell of cells) {
@@ -90,13 +97,16 @@ export function canPlace(grid, brick, gx, gz, layer) {
 }
 
 export function occupy(grid, brick, gx, gz, layer) {
+  const units = brickUnits(brick);
   const cells = [];
   const studs = new Set();
   for (const cell of layoutOf(brick)) {
-    const key = cellKey(gx + cell.x, gz + cell.z, layer);
-    grid.set(key, brick);
-    cells.push(key);
-    if (cell.stud) studs.add(key);
+    for (let step = 0; step < units; step += 1) {
+      const key = cellKey(gx + cell.x, gz + cell.z, layer + step);
+      grid.set(key, brick);
+      cells.push(key);
+      if (step === units - 1 && cell.stud) studs.add(key);
+    }
   }
   brick.userData.cells = cells;
   brick.userData.studSet = studs;
@@ -143,14 +153,17 @@ export function canPlaceAssembly(grid, pieces, snap) {
   const studs = new Set();
   for (const piece of pieces) {
     const layer = snap.layer + piece.dlayer;
-    if (layer < 0 || layer > MAX_LAYER) return false;
+    const units = brickUnits(piece.brick);
+    if (layer < 0 || layer + units - 1 > MAX_LAYER) return false;
     for (const cell of layoutOf(piece.brick, piece.rot)) {
       const x = snap.gx + piece.dgx + cell.x;
       const z = snap.gz + piece.dgz + cell.z;
-      const key = cellKey(x, z, layer);
-      if (occupied.has(key) || grid.has(key)) return false;
-      occupied.add(key);
-      if (cell.stud) studs.add(key);
+      for (let step = 0; step < units; step += 1) {
+        const key = cellKey(x, z, layer + step);
+        if (occupied.has(key) || grid.has(key)) return false;
+        occupied.add(key);
+        if (step === units - 1 && cell.stud) studs.add(key);
+      }
     }
   }
   const footed = new Set();
@@ -185,7 +198,7 @@ function closestSnap(localX, localY, localZ, w, d, aim, accept) {
   let best = null;
   let bestDist = limit;
   const span = Math.ceil(SNAP_STUDS);
-  for (let layer = Math.max(0, aim - 1); layer <= aim + 1; layer += 1) {
+  for (let layer = Math.max(0, aim - 4); layer <= aim + 4; layer += 1) {
     for (let dx = -span; dx <= span; dx += 1) {
       for (let dz = -span; dz <= span; dz += 1) {
         const gx = gx0 + dx;
@@ -193,7 +206,7 @@ function closestSnap(localX, localY, localZ, w, d, aim, accept) {
         if (!accept(gx, gz, layer)) continue;
         const cx = (gx + w / 2) * STUD;
         const cz = (gz + d / 2) * STUD;
-        const cy = layer * HEIGHT;
+        const cy = layer * LAYER;
         const dist = (cx - localX) ** 2 + (cz - localZ) ** 2 + (cy - localY) ** 2;
         if (dist < bestDist) {
           bestDist = dist;
@@ -207,7 +220,7 @@ function closestSnap(localX, localY, localZ, w, d, aim, accept) {
 
 export function findSnap(grid, brick, localX, localY, localZ) {
   const { w, d } = footprintOf(brick);
-  const aim = Math.max(0, Math.round(localY / HEIGHT));
+  const aim = Math.max(0, Math.round(localY / LAYER));
   return closestSnap(localX, localY, localZ, w, d, aim, (gx, gz, layer) => canPlace(grid, brick, gx, gz, layer));
 }
 
@@ -247,7 +260,7 @@ export function rotatePieceRecords(records, primaryBrick) {
 export function findAssemblySnap(grid, pieces, primary, localX, localY, localZ) {
   const primaryPiece = pieces.find((piece) => piece.brick === primary);
   const { w, d } = footprintOf(primary, primaryPiece?.rot ?? primary.userData.rot);
-  const aim = Math.max(0, Math.round(localY / HEIGHT));
+  const aim = Math.max(0, Math.round(localY / LAYER));
   return closestSnap(localX, localY, localZ, w, d, aim, (gx, gz, layer) => (
     canPlaceAssembly(grid, pieces, { gx, gz, layer })
   ));
@@ -257,7 +270,7 @@ export function brickLocalPosition(brick, snap) {
   const { w, d } = footprintOf(brick);
   return {
     x: (snap.gx + w / 2) * STUD,
-    y: snap.layer * HEIGHT,
+    y: snap.layer * LAYER,
     z: (snap.gz + d / 2) * STUD,
   };
 }

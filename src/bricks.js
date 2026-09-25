@@ -41,13 +41,18 @@ function extrudeUp(shape, height) {
   return geometry;
 }
 
-function geometryFor(w, d) {
-  const key = `box${w}x${d}`;
+function socketDepth(bodyH) {
+  return Math.min(STUD_H, Math.max(0.004, bodyH - 0.005));
+}
+
+function geometryFor(w, d, bodyH) {
+  const key = `box${w}x${d}x${bodyH}`;
   let geometry = bodyGeometry.get(key);
   if (geometry) return geometry;
 
   const width = w * STUD - GAP;
   const depth = d * STUD - GAP;
+  const socket = socketDepth(bodyH);
   const outline = new THREE.Shape();
   roundedRect(outline, -width / 2, -depth / 2, width, depth, 0.003);
   for (let x = 0; x < w; x += 1) {
@@ -67,10 +72,10 @@ function geometryFor(w, d) {
 
   const capOutline = new THREE.Shape();
   roundedRect(capOutline, -width / 2, -depth / 2, width, depth, 0.003);
-  const socket = extrudeUp(outline, STUD_H);
-  const cap = extrudeUp(capOutline, HEIGHT - STUD_H + 0.0004);
-  cap.translate(0, STUD_H - 0.0004, 0);
-  geometry = mergeGeometries([socket, cap]);
+  const plate = extrudeUp(outline, socket);
+  const cap = extrudeUp(capOutline, bodyH - socket + 0.0004);
+  cap.translate(0, socket - 0.0004, 0);
+  geometry = mergeGeometries([plate, cap]);
   geometry.computeVertexNormals();
   bodyGeometry.set(key, geometry);
   return geometry;
@@ -92,7 +97,7 @@ function cellCenter(ix, iz, w, d) {
   };
 }
 
-function rectPlate(x0, z0, x1, z1, holes) {
+function rectPlate(x0, z0, x1, z1, holes, height = STUD_H) {
   const shape = new THREE.Shape();
   shape.moveTo(x0, -z1);
   shape.lineTo(x1, -z1);
@@ -104,7 +109,7 @@ function rectPlate(x0, z0, x1, z1, holes) {
     path.absarc(hole.x, -hole.z, hole.r, 0, Math.PI * 2, true);
     shape.holes.push(path);
   }
-  return extrudeUp(shape, STUD_H);
+  return extrudeUp(shape, height);
 }
 
 function holeRadius(cz, zLimit) {
@@ -113,16 +118,17 @@ function holeRadius(cz, zLimit) {
   return Math.min(HOLE_R, room);
 }
 
-function slopeGeometry(w, d) {
-  const key = `slope${w}x${d}`;
+function slopeGeometry(w, d, bodyH) {
+  const key = `slope${w}x${d}x${bodyH}`;
   let geometry = bodyGeometry.get(key);
   if (geometry) return geometry;
   const width = w * STUD - GAP;
   const depth = d * STUD - GAP;
+  const socket = socketDepth(bodyH);
   const z0 = -depth / 2;
   const z1 = depth / 2;
   const knee = cellCenter(0, d - 1, w, d).z - STUD / 2;
-  const zA = z0 + (knee - z0) * (STUD_H / HEIGHT);
+  const zA = z0 + (knee - z0) * (socket / bodyH);
   const holes = [];
   for (let x = 0; x < w; x += 1) {
     for (let z = 0; z < d; z += 1) {
@@ -135,16 +141,16 @@ function slopeGeometry(w, d) {
     profileGeometry(width, (shape) => {
       shape.moveTo(z0, 0);
       shape.lineTo(zA, 0);
-      shape.lineTo(zA, STUD_H);
+      shape.lineTo(zA, socket);
       shape.lineTo(z0, 0);
     }),
-    rectPlate(-width / 2, zA, width / 2, z1, holes),
+    rectPlate(-width / 2, zA, width / 2, z1, holes, socket),
     profileGeometry(width, (shape) => {
-      shape.moveTo(zA, STUD_H);
-      shape.lineTo(z1, STUD_H);
-      shape.lineTo(z1, HEIGHT);
-      shape.lineTo(knee, HEIGHT);
-      shape.lineTo(zA, STUD_H);
+      shape.moveTo(zA, socket);
+      shape.lineTo(z1, socket);
+      shape.lineTo(z1, bodyH);
+      shape.lineTo(knee, bodyH);
+      shape.lineTo(zA, socket);
     }),
   ];
   geometry = mergeGeometries(parts);
@@ -153,12 +159,13 @@ function slopeGeometry(w, d) {
   return geometry;
 }
 
-function wallGeometry(w, d) {
-  const key = `wall${w}x${d}`;
+function wallGeometry(w, d, bodyH) {
+  const key = `wall${w}x${d}x${bodyH}`;
   let geometry = bodyGeometry.get(key);
   if (geometry) return geometry;
   const width = w * STUD - GAP;
   const depth = d * STUD - GAP;
+  const socket = socketDepth(bodyH);
   const z0 = -depth / 2;
   const z1 = depth / 2;
   const knee = cellCenter(0, 0, w, d).z + STUD / 2;
@@ -169,18 +176,18 @@ function wallGeometry(w, d) {
     if (radius > 0) holes.push({ ...center, r: radius });
   }
   const parts = [
-    rectPlate(-width / 2, z0, width / 2, knee, holes),
+    rectPlate(-width / 2, z0, width / 2, knee, holes, socket),
     profileGeometry(width, (shape) => {
-      shape.moveTo(z0, STUD_H);
-      shape.lineTo(knee, STUD_H);
-      shape.lineTo(knee, HEIGHT);
-      shape.lineTo(z0, HEIGHT);
+      shape.moveTo(z0, socket);
+      shape.lineTo(knee, socket);
+      shape.lineTo(knee, bodyH);
+      shape.lineTo(z0, bodyH);
       shape.closePath();
     }),
     profileGeometry(width, (shape) => {
       shape.moveTo(knee, 0);
-      shape.lineTo(z1, HEIGHT);
-      shape.lineTo(knee, HEIGHT);
+      shape.lineTo(z1, bodyH);
+      shape.lineTo(knee, bodyH);
       shape.closePath();
     }),
   ];
@@ -190,27 +197,32 @@ function wallGeometry(w, d) {
   return geometry;
 }
 
-export function createBrick(shape, color) {
+export function createBrick(shape, color, options = {}) {
   const group = new THREE.Group();
   const material = materialFor(color.hex);
   const kind = shape.kind || 'box';
-  const bodyGeo = kind === 'slope' ? slopeGeometry(shape.w, shape.d) : kind === 'wall' ? wallGeometry(shape.w, shape.d) : geometryFor(shape.w, shape.d);
+  const units = options.units || 4;
+  const bodyH = HEIGHT * units / 4;
+  const flat = !!options.flat;
+  const bodyGeo = kind === 'slope' ? slopeGeometry(shape.w, shape.d, bodyH) : kind === 'wall' ? wallGeometry(shape.w, shape.d, bodyH) : geometryFor(shape.w, shape.d, bodyH);
   const body = new THREE.Mesh(bodyGeo, material);
   body.castShadow = true;
   body.receiveShadow = true;
   group.add(body);
 
-  for (let x = 0; x < shape.w; x += 1) {
-    for (let z = 0; z < shape.d; z += 1) {
-      if (kind === 'slope' && z !== shape.d - 1) continue;
-      const stud = new THREE.Mesh(studGeometry, material);
-      stud.position.set(
-        (x - (shape.w - 1) / 2) * STUD,
-        HEIGHT + STUD_RISE / 2,
-        (z - (shape.d - 1) / 2) * STUD,
-      );
-      stud.castShadow = true;
-      group.add(stud);
+  if (!flat) {
+    for (let x = 0; x < shape.w; x += 1) {
+      for (let z = 0; z < shape.d; z += 1) {
+        if (kind === 'slope' && z !== shape.d - 1) continue;
+        const stud = new THREE.Mesh(studGeometry, material);
+        stud.position.set(
+          (x - (shape.w - 1) / 2) * STUD,
+          bodyH + STUD_RISE / 2,
+          (z - (shape.d - 1) / 2) * STUD,
+        );
+        stud.castShadow = true;
+        group.add(stud);
+      }
     }
   }
 
@@ -219,6 +231,9 @@ export function createBrick(shape, color) {
     role: 'supply',
     shapeId: shape.id,
     colorId: color.id,
+    heightId: options.heightId || '1',
+    units,
+    flat,
     baseW: shape.w,
     baseD: shape.d,
     kind,

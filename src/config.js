@@ -1,11 +1,12 @@
 export const STUD = 0.06;
 export const HEIGHT = 0.072;
+export const LAYER = HEIGHT / 4;
 export const STUD_H = 0.012;
 export const PEG_MIN = 0.55;
 export const PEG_MAX = 2;
 export const GRID_X = 16;
 export const GRID_Z = 12;
-export const MAX_LAYER = 20;
+export const MAX_LAYER = 80;
 export const MAX_PEDESTALS = 8;
 
 export const COLORS = [
@@ -40,6 +41,19 @@ export function shapeById(id) {
   return SHAPES.find((shape) => shape.id === id);
 }
 
-export function partLabel(colorId, shapeId) {
-  return `${colorById(colorId).name} ${shapeById(shapeId).name}`;
+export const HEIGHTS = [
+  { id: '1', label: '1', units: 4 },
+  { id: 'half', label: '1/2', units: 2 },
+  { id: 'quarter', label: '1/4', units: 1 },
+];
+
+export function heightById(id) {
+  return HEIGHTS.find((height) => height.id === id) || HEIGHTS[0];
+}
+
+export function partLabel(colorId, shapeId, heightId = '1', flat = false) {
+  const height = heightById(heightId);
+  const size = height.id === '1' ? '' : ` ${height.label}`;
+  const top = flat ? ' flat' : '';
+  return `${colorById(colorId).name} ${shapeById(shapeId).name}${size}${top}`;
 }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { COLORS, GRID_X, GRID_Z, SHAPES, STUD } from './config.js';
+import { COLORS, GRID_X, GRID_Z, HEIGHTS, SHAPES, STUD } from './config.js';
 
 const TABLE_TOP = 0.76;
 
@@ -271,6 +271,39 @@ function createMachine(targets) {
     return mesh;
   });
 
+  const heightButtons = HEIGHTS.map((height, index) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.12, 0.05, 0.016),
+      new THREE.MeshStandardMaterial({
+        map: buttonTexture(height.label, '#243038', '#f4f7f8'),
+        roughness: 0.5,
+        emissive: 0x8fd0ff,
+        emissiveIntensity: 0,
+      }),
+    );
+    mesh.position.set(-0.36 + index * 0.16, -0.31, 0.02);
+    mesh.userData = { type: 'ui', action: 'height', value: height.id };
+    mesh.castShadow = true;
+    group.add(mesh);
+    targets.push(mesh);
+    return mesh;
+  });
+
+  const flatButton = new THREE.Mesh(
+    new THREE.BoxGeometry(0.16, 0.05, 0.016),
+    new THREE.MeshStandardMaterial({
+      map: buttonTexture('FLAT', '#243038', '#f4f7f8'),
+      roughness: 0.5,
+      emissive: 0xf1c40f,
+      emissiveIntensity: 0,
+    }),
+  );
+  flatButton.position.set(0.28, -0.31, 0.02);
+  flatButton.userData = { type: 'ui', action: 'top' };
+  flatButton.castShadow = true;
+  group.add(flatButton);
+  targets.push(flatButton);
+
   const orderButton = new THREE.Mesh(
     new THREE.BoxGeometry(0.28, 0.07, 0.018),
     new THREE.MeshStandardMaterial({
@@ -280,7 +313,7 @@ function createMachine(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  orderButton.position.set(-0.22, -0.36, 0.022);
+  orderButton.position.set(-0.22, -0.44, 0.022);
   orderButton.userData = { type: 'ui', action: 'order' };
   orderButton.castShadow = true;
   group.add(orderButton);
@@ -290,7 +323,7 @@ function createMachine(targets) {
     new THREE.BoxGeometry(0.36, 0.07, 0.02),
     new THREE.MeshStandardMaterial({ color: 0x1c242c, roughness: 0.55 }),
   );
-  pegTrack.position.set(0.24, -0.36, 0.02);
+  pegTrack.position.set(0.24, -0.44, 0.02);
   pegTrack.userData = { type: 'ui', action: 'peg' };
   group.add(pegTrack);
   targets.push(pegTrack);
@@ -329,7 +362,7 @@ function createMachine(targets) {
     ctx.textAlign = 'center';
     ctx.fillText('PARTS', canvas.width / 2, 48);
     ctx.fillStyle = '#f7f4ee';
-    ctx.font = '700 54px Segoe UI, sans-serif';
+    ctx.font = headline.length > 18 ? '700 36px Segoe UI, sans-serif' : '700 54px Segoe UI, sans-serif';
     ctx.fillText(headline, canvas.width / 2, 128);
     ctx.fillStyle = '#b7c4ce';
     ctx.font = '500 28px Segoe UI, sans-serif';
@@ -393,16 +426,20 @@ function createMachine(targets) {
 
   applyScreenPose();
 
-  function refreshSelection(colorId, shapeId) {
+  function refreshSelection(selection) {
     for (const button of colorButtons) {
-      const selected = button.userData.value === colorId;
+      const selected = button.userData.value === selection.colorId;
       button.material.emissive.copy(button.material.color);
       button.material.emissiveIntensity = selected ? 0.42 : 0.06;
       button.scale.setScalar(selected ? 1.1 : 1);
     }
     for (const button of shapeButtons) {
-      button.material.emissiveIntensity = button.userData.value === shapeId ? 0.22 : 0;
+      button.material.emissiveIntensity = button.userData.value === selection.shapeId ? 0.22 : 0;
     }
+    for (const button of heightButtons) {
+      button.material.emissiveIntensity = button.userData.value === selection.heightId ? 0.28 : 0;
+    }
+    flatButton.material.emissiveIntensity = selection.flat ? 0.35 : 0;
   }
 
   return { group: mount, orderButton, pegTrack, colorButtons, shapeButtons, paintScreen, refreshSelection, setPegKnob, toggleScreen, update };
@@ -438,7 +475,7 @@ export function createPedestal(index, label) {
     ctx.fillStyle = '#1c242c';
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = '#f4f7f8';
-    ctx.font = '600 32px Segoe UI, sans-serif';
+    ctx.font = label.length > 16 ? '600 20px Segoe UI, sans-serif' : '600 32px Segoe UI, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, w / 2, h / 2);

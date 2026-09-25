@@ -3,7 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XRButton } from 'three/addons/webxr/XRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { createBrick, makeGhost, setBrickRaycast } from './bricks.js';
-import { colorById, GRID_X, GRID_Z, HEIGHT, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
+import { colorById, GRID_X, GRID_Z, HEIGHT, heightById, LAYER, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
 import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
 import { createPedestal, createWorld } from './world.js';
 
@@ -50,7 +50,7 @@ const localPoint = new THREE.Vector3();
 const worldPoint = new THREE.Vector3();
 const tmpDir = new THREE.Vector3();
 
-const selection = { colorId: 'red', shapeId: '2x4' };
+const selection = { colorId: 'red', shapeId: '2x4', heightId: '1', flat: false };
 let held = null;
 let heldFrom = null;
 let heldHome = null;
@@ -67,9 +67,9 @@ const yawEuler = new THREE.Euler();
 const lastAim = new THREE.Vector3();
 let aimLayer = null;
 
-machine.refreshSelection(selection.colorId, selection.shapeId);
+machine.refreshSelection(selection);
 paintSelection('Press ORDER to dispense');
-setStatus('Red 2×4 is selected. Press ORDER.');
+setStatus(`${partLabel(selection.colorId, selection.shapeId, selection.heightId, selection.flat)} is selected. Press ORDER.`);
 
 renderer.xr.addEventListener('sessionstart', () => {
   hudEl.style.display = 'none';
@@ -211,10 +211,16 @@ function playSnap() {
   click.stop(t + 0.06);
 }
 
+function chosenLabel() {
+  return partLabel(selection.colorId, selection.shapeId, selection.heightId, selection.flat);
+}
+
+function brickLabel(brick) {
+  return partLabel(brick.userData.colorId, brick.userData.shapeId, brick.userData.heightId, brick.userData.flat);
+}
+
 function paintSelection(detail) {
-  const color = colorById(selection.colorId);
-  const shape = shapeById(selection.shapeId);
-  machine.paintScreen(`${color.name} ${shape.name}`, detail);
+  machine.paintScreen(chosenLabel(), detail);
 }
 
 function ownerOf(object) {
@@ -259,7 +265,7 @@ function raiseOnto(point, brick, layer) {
   const scale = new THREE.Vector3();
   brick.getWorldPosition(base);
   brick.getWorldScale(scale);
-  point.y = base.y + HEIGHT * scale.y;
+  point.y = base.y + ((brick.userData.units || 4) / 4) * HEIGHT * scale.y;
   aimLayer = layer + 1;
   return point;
 }
@@ -292,23 +298,37 @@ function placementPoint() {
   return stackAt(point);
 }
 
+function showSelection() {
+  machine.refreshSelection(selection);
+  paintSelection('Press ORDER to dispense');
+  setStatus(`${chosenLabel()} is selected. Press ORDER.`);
+}
+
 function selectColor(colorId) {
   selection.colorId = colorId;
-  machine.refreshSelection(selection.colorId, selection.shapeId);
-  paintSelection('Press ORDER to dispense');
-  setStatus(`${partLabel(selection.colorId, selection.shapeId)} is selected. Press ORDER.`);
+  showSelection();
 }
 
 function selectShape(shapeId) {
   selection.shapeId = shapeId;
-  machine.refreshSelection(selection.colorId, selection.shapeId);
-  paintSelection('Press ORDER to dispense');
-  setStatus(`${partLabel(selection.colorId, selection.shapeId)} is selected. Press ORDER.`);
+  showSelection();
+}
+
+function selectHeight(heightId) {
+  selection.heightId = heightId;
+  showSelection();
+}
+
+function toggleFlat() {
+  selection.flat = !selection.flat;
+  showSelection();
 }
 
 function activateUi(owner) {
   if (owner.userData.action === 'color') selectColor(owner.userData.value);
   else if (owner.userData.action === 'shape') selectShape(owner.userData.value);
+  else if (owner.userData.action === 'height') selectHeight(owner.userData.value);
+  else if (owner.userData.action === 'top') toggleFlat();
   else if (owner.userData.action === 'order') orderSelection();
   else if (owner.userData.action === 'screen') {
     const open = machine.toggleScreen();
@@ -317,10 +337,15 @@ function activateUi(owner) {
 }
 
 function orderSelection() {
-  const existing = pedestals.find((pedestal) => pedestal.colorId === selection.colorId && pedestal.shapeId === selection.shapeId);
+  const existing = pedestals.find((pedestal) => (
+    pedestal.colorId === selection.colorId
+    && pedestal.shapeId === selection.shapeId
+    && pedestal.heightId === selection.heightId
+    && pedestal.flat === selection.flat
+  ));
   if (existing) {
     flash(existing.top);
-    const label = partLabel(selection.colorId, selection.shapeId);
+    const label = chosenLabel();
     paintSelection('Already on a pedestal');
     setStatus(`${label} is already out.`);
     return existing;
@@ -329,23 +354,25 @@ function orderSelection() {
     setStatus(`The room already has ${MAX_PEDESTALS} pedestals.`);
     return null;
   }
-  const pedestal = spawnPedestal(selection.colorId, selection.shapeId);
-  const label = partLabel(selection.colorId, selection.shapeId);
+  const pedestal = spawnPedestal(selection);
+  const label = chosenLabel();
   playDispense();
   paintSelection('Dispensed');
   setStatus(`${label} is on a pedestal.`);
   return pedestal;
 }
 
-function spawnPedestal(colorId, shapeId) {
+function spawnPedestal(choice) {
   const index = pedestals.length;
-  const label = partLabel(colorId, shapeId);
+  const label = partLabel(choice.colorId, choice.shapeId, choice.heightId, choice.flat);
   const visual = createPedestal(index, label);
   scene.add(visual.group);
   const pedestal = {
     id: nextPedestalId,
-    colorId,
-    shapeId,
+    colorId: choice.colorId,
+    shapeId: choice.shapeId,
+    heightId: choice.heightId,
+    flat: choice.flat,
     group: visual.group,
     top: visual.top,
     supply: null,
@@ -358,7 +385,12 @@ function spawnPedestal(colorId, shapeId) {
 }
 
 function refill(pedestal, animateIn) {
-  const brick = createBrick(shapeById(pedestal.shapeId), colorById(pedestal.colorId));
+  const height = heightById(pedestal.heightId);
+  const brick = createBrick(shapeById(pedestal.shapeId), colorById(pedestal.colorId), {
+    units: height.units,
+    heightId: height.id,
+    flat: pedestal.flat,
+  });
   brick.userData.role = 'supply';
   brick.userData.pedestalId = pedestal.id;
   brick.position.set(0, 0.712, 0);
@@ -419,7 +451,8 @@ function surfaceGap(brick, world) {
   const hx = brick.userData.baseW * STUD * 0.5;
   const hz = brick.userData.baseD * STUD * 0.5;
   const dx = localGrab.x - THREE.MathUtils.clamp(localGrab.x, -hx, hx);
-  const dy = localGrab.y - THREE.MathUtils.clamp(localGrab.y, 0, HEIGHT + STUD_H);
+  const top = ((brick.userData.units || 4) / 4) * HEIGHT + (brick.userData.flat ? 0 : STUD_H);
+  const dy = localGrab.y - THREE.MathUtils.clamp(localGrab.y, 0, top);
   const dz = localGrab.z - THREE.MathUtils.clamp(localGrab.z, -hz, hz);
   brick.getWorldScale(scalePoint);
   return Math.hypot(dx, dy, dz) * scalePoint.x;
@@ -520,7 +553,7 @@ function grabOne(brick, holder) {
   scene.add(ghost);
 
   if (fromSupply && pedestal) pedestal.supply = null;
-  setStatus(`Holding ${partLabel(brick.userData.colorId, brick.userData.shapeId)}. Let go to drop it.`);
+  setStatus(`Holding ${brickLabel(brick)}. Let go to drop it.`);
 }
 
 function grabAssembly(bricks, primary, holder) {
@@ -534,7 +567,7 @@ function grabAssembly(bricks, primary, holder) {
   }));
   const carry = new THREE.Group();
   gridGroup.add(carry);
-  carry.position.set(origin.gx * STUD, origin.layer * HEIGHT, origin.gz * STUD);
+  carry.position.set(origin.gx * STUD, origin.layer * LAYER, origin.gz * STUD);
   for (const piece of pieces) {
     release(grid, piece.brick);
     const index = targets.indexOf(piece.brick);
@@ -544,7 +577,7 @@ function grabAssembly(bricks, primary, holder) {
     piece.brick.userData.snap = null;
     const { w, d } = footprintOf(piece.brick);
     carry.attach(piece.brick);
-    piece.brick.position.set((piece.dgx + w / 2) * STUD, piece.dlayer * HEIGHT, (piece.dgz + d / 2) * STUD);
+    piece.brick.position.set((piece.dgx + w / 2) * STUD, piece.dlayer * LAYER, (piece.dgz + d / 2) * STUD);
     piece.brick.rotation.set(0, piece.brick.userData.rot * Math.PI / 2, 0);
     piece.brick.scale.setScalar(1);
   }
@@ -586,7 +619,7 @@ function rotateAssembly() {
     piece.dgz = item.dgz;
     piece.brick.userData.rot = item.rot;
     const { w, d } = footprintOf(piece.brick);
-    piece.brick.position.set((piece.dgx + w / 2) * STUD, piece.dlayer * HEIGHT, (piece.dgz + d / 2) * STUD);
+    piece.brick.position.set((piece.dgx + w / 2) * STUD, piece.dlayer * LAYER, (piece.dgz + d / 2) * STUD);
     piece.brick.rotation.set(0, piece.brick.userData.rot * Math.PI / 2, 0);
   }
 }
@@ -620,7 +653,7 @@ function placeAssembly() {
     piece.brick.userData.rot = piece.rot;
     const { w, d } = footprintOf(piece.brick);
     gridGroup.attach(piece.brick);
-    piece.brick.position.set((gx + w / 2) * STUD, layer * HEIGHT, (gz + d / 2) * STUD);
+    piece.brick.position.set((gx + w / 2) * STUD, layer * LAYER, (gz + d / 2) * STUD);
     piece.brick.rotation.set(0, piece.rot * Math.PI / 2, 0);
     piece.brick.scale.setScalar(1);
     piece.brick.userData.role = 'placed';
@@ -660,7 +693,7 @@ function placeSingle() {
     if (pedestal && !pedestal.supply) refill(pedestal, true);
   }
   playSnap();
-  setStatus(`Placed ${partLabel(brick.userData.colorId, brick.userData.shapeId)}.`);
+  setStatus(`Placed ${brickLabel(brick)}.`);
   return true;
 }
 
