@@ -453,18 +453,18 @@ function createMachine(targets) {
 
 export function createChallengeStand(targets) {
   const group = new THREE.Group();
-  group.position.set(-1.02, 0, 0.08);
+  group.position.set(0, 0, -1.45);
 
   const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a34, roughness: 0.78 });
   const woodDark = new THREE.MeshStandardMaterial({ color: 0x5c3b22, roughness: 0.8 });
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.74, 18), woodDark);
-  post.position.y = 0.37;
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.07, 1.84, 18), woodDark);
+  post.position.y = 0.92;
   post.castShadow = true;
   group.add(post);
 
   const plateSize = 8 * STUD;
   const model = new THREE.Group();
-  model.position.y = 0.78;
+  model.position.y = 1.88;
   group.add(model);
 
   const topMat = new THREE.MeshStandardMaterial({ color: 0xc5ced8, roughness: 0.82, emissive: 0x000000, emissiveIntensity: 0 });
@@ -492,7 +492,7 @@ export function createChallengeStand(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  newButton.position.set(0.2, 1.1, -plateSize / 2 - 0.06);
+  newButton.position.set(0.46, 1.86, 0.22);
   newButton.userData = { type: 'ui', action: 'challenge' };
   newButton.castShadow = true;
   group.add(newButton);
@@ -503,9 +503,16 @@ export function createChallengeStand(targets) {
     new THREE.PlaneGeometry(0.42, 0.13),
     new THREE.MeshBasicMaterial({ map: sign.texture }),
   );
-  signMesh.position.set(0, 1.08, -plateSize / 2 - 0.16);
-  signMesh.rotation.x = -0.42;
+  signMesh.position.set(-0.34, 1.94, 0.08);
+  signMesh.rotation.x = -0.5;
   group.add(signMesh);
+
+  const glow = new THREE.PointLight(0xd6ffe6, 0, 2.4);
+  glow.position.set(0, 2.0, 0);
+  group.add(glow);
+  const sparkGeo = new THREE.SphereGeometry(0.014, 6, 6);
+  const sparks = [];
+  let glowTime = 0;
 
   let matched = false;
   let shown = 'ready';
@@ -543,17 +550,65 @@ export function createChallengeStand(targets) {
     paint(headline, detail);
   }
 
+  function celebrate() {
+    glowTime = 1.6;
+    for (let i = 0; i < 22; i += 1) {
+      const spark = new THREE.Mesh(
+        sparkGeo,
+        new THREE.MeshBasicMaterial({
+          color: i % 2 ? 0xffe08a : 0x8dffc0,
+          transparent: true,
+          opacity: 1,
+        }),
+      );
+      spark.position.set((Math.random() - 0.5) * 0.28, 1.94 + Math.random() * 0.08, (Math.random() - 0.5) * 0.28);
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 0.25 + Math.random() * 0.45;
+      group.add(spark);
+      sparks.push({
+        mesh: spark,
+        vx: Math.cos(angle) * speed,
+        vy: 0.35 + Math.random() * 0.55,
+        vz: Math.sin(angle) * speed,
+        life: 0.9 + Math.random() * 0.4,
+        age: 0,
+      });
+    }
+  }
+
+  function update(dt) {
+    model.rotation.y += dt * 0.22;
+    if (glowTime > 0) {
+      glowTime = Math.max(0, glowTime - dt);
+      glow.intensity = glowTime * 3.2;
+    }
+    for (let i = sparks.length - 1; i >= 0; i -= 1) {
+      const spark = sparks[i];
+      spark.age += dt;
+      spark.vy -= dt * 0.8;
+      spark.mesh.position.x += spark.vx * dt;
+      spark.mesh.position.y += spark.vy * dt;
+      spark.mesh.position.z += spark.vz * dt;
+      spark.mesh.material.opacity = Math.max(0, 1 - spark.age / spark.life);
+      if (spark.age >= spark.life) {
+        spark.mesh.material.dispose();
+        group.remove(spark.mesh);
+        sparks.splice(i, 1);
+      }
+    }
+  }
+
   paint('Match this', 'Any turn is fine');
 
-  return { group, model, bricks, newButton, sign: signMesh, setVerdict };
+  return { group, model, bricks, newButton, sign: signMesh, setVerdict, celebrate, update };
 }
 
 function createBin() {
   const group = new THREE.Group();
-  group.position.set(-0.18, 0, 0.28);
+  group.position.set(-0.98, 0, 0.06);
   const mat = new THREE.MeshStandardMaterial({ color: 0x2c333a, roughness: 0.72, metalness: 0.08 });
-  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 0.5, 16), mat);
-  post.position.y = 0.25;
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.08, 0.76, 16), mat);
+  post.position.y = 0.38;
   post.castShadow = true;
   group.add(post);
   const wall = (w, h, d, x, y, z) => {
@@ -563,8 +618,8 @@ function createBin() {
     mesh.receiveShadow = true;
     group.add(mesh);
   };
-  const span = 0.28;
-  const lip = 0.58;
+  const span = 0.34;
+  const lip = 0.74;
   wall(span, 0.018, span, 0, lip, 0);
   wall(0.018, 0.16, span, -span / 2, lip + 0.08, 0);
   wall(0.018, 0.16, span, span / 2, lip + 0.08, 0);
@@ -585,6 +640,13 @@ function createBin() {
   );
   sign.position.set(0, lip + 0.2, span / 2 + 0.012);
   group.add(sign);
+  const sideSign = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.18, 0.09),
+    new THREE.MeshBasicMaterial({ map: label }),
+  );
+  sideSign.position.set(span / 2 + 0.012, lip + 0.2, 0);
+  sideSign.rotation.y = Math.PI / 2;
+  group.add(sideSign);
   return group;
 }
 

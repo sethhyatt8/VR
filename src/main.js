@@ -229,14 +229,32 @@ function paintSelection(detail) {
 function playClear() {
   const ctx = audio();
   const t = ctx.currentTime;
-  [523, 659, 784].forEach((freq, index) => {
+  [523, 659, 784, 1047].forEach((freq, index) => {
     const tone = ctx.createOscillator();
-    tone.type = 'sine';
+    tone.type = index === 3 ? 'triangle' : 'sine';
     tone.frequency.value = freq;
-    tone.connect(envGain(ctx, t + index * 0.09, 0.08, 0.01, 0.22));
-    tone.start(t + index * 0.09);
-    tone.stop(t + index * 0.09 + 0.28);
+    tone.connect(envGain(ctx, t + index * 0.11, index === 3 ? 0.14 : 0.1, 0.02, 0.38));
+    tone.start(t + index * 0.11);
+    tone.stop(t + index * 0.11 + 0.46);
   });
+  const noise = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.35), ctx.sampleRate);
+  const data = noise.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+  const burst = ctx.createBufferSource();
+  burst.buffer = noise;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.setValueAtTime(1400, t);
+  filter.frequency.exponentialRampToValueAtTime(4200, t + 0.3);
+  burst.connect(filter);
+  filter.connect(envGain(ctx, t + 0.08, 0.12, 0.02, 0.32));
+  burst.start(t + 0.08);
+  burst.stop(t + 0.42);
+}
+
+function celebrateSolve() {
+  playClear();
+  world.challenge.celebrate();
 }
 
 function clearExample() {
@@ -264,9 +282,9 @@ function showExample(model) {
 }
 
 const verdictStatus = {
-  ready: 'Match the build on your left. Any turn is fine, and a mirror counts.',
-  match: 'That matches. Press NEW on the left for another.',
-  extra: 'Extra bricks are still on the table. Drop them in the TOSS bin.',
+  ready: 'Match the build behind the table. Any turn is fine, and a mirror counts.',
+  match: 'That matches. Press NEW for another.',
+  extra: 'Extra bricks are still on the table. Drop them in the TOSS bin on your left.',
   short: 'Still missing some. Any turn is fine, and a mirror counts.',
   different: 'Colors or heights still differ. Any turn is fine, and a mirror counts.',
 };
@@ -278,7 +296,7 @@ function reviewBuild(speak) {
   if (verdict === 'match') {
     if (!challengeMatched) {
       challengeMatched = true;
-      playClear();
+      celebrateSolve();
       setStatus(verdictStatus.match);
     }
     return true;
@@ -301,13 +319,13 @@ function startChallenge(first) {
   if (sameLook(cellsFromGrid(grid), model.cells)) {
     challengeMatched = true;
     world.challenge.setVerdict('match');
-    playClear();
-    setStatus('That already matches. Press NEW on the left for another.');
+    celebrateSolve();
+    setStatus('That already matches. Press NEW for another.');
     return;
   }
   setStatus(first
-    ? `${chosenLabel()} is selected. Match the build on your left. Press NEW for another.`
-    : 'New build on your left. Match the colors and the heights.');
+    ? `${chosenLabel()} is selected. Match the build behind the table. Press NEW for another.`
+    : 'New build behind the table. Match the colors and the heights.');
 }
 
 function ownerOf(object) {
@@ -1025,9 +1043,13 @@ function setPegScale(next) {
   syncBrickScale(held);
   syncBrickScale(ghost);
   world.challenge.model.scale.setScalar(pegScale);
-  const edge = 8 * STUD * pegScale / 2;
-  world.challenge.sign.position.set(-0.22, 1.14, -edge - 0.1);
-  world.challenge.newButton.position.set(0.2, 1.1, -edge - 0.06);
+  const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
+  world.challenge.group.position.set(0, 0, far - 0.46);
+  const front = 8 * STUD * pegScale / 2 + 0.06;
+  world.challenge.sign.position.set(-front - 0.1, 1.94, 0.08);
+  world.challenge.newButton.position.set(front + 0.16, 1.86, 0.22);
+  const side = (GRID_X * STUD * pegScale + 0.16) / 2;
+  world.bin.position.set(-(side + 0.38), 0, 0.06);
   if (assembly) assembly.carry.scale.setScalar(inBuild(assembly.carry) ? 1 : pegScale);
   pegReadout.textContent = `${(STUD * pegScale * 100).toFixed(1)} cm`;
   if (document.activeElement !== pegInput) pegInput.value = String(pegScale);
@@ -1209,6 +1231,7 @@ function frame() {
     if (k >= 1) jobs.splice(i, 1);
   }
   machine.update(dt);
+  world.challenge.update(dt);
   if (!renderer.xr.isPresenting) controls.update();
   else {
     for (const controller of controllers) {
