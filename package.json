@@ -9,8 +9,8 @@
     "preview": "vite preview --host"
   },
   "dependencies": {
-    "three": "^0.180.0",
-    "trystero": "^0.25.4"
+    "mqtt": "^5.16.0",
+    "three": "^0.180.0"
   },
   "devDependencies": {
     "vite": "^7.1.5"

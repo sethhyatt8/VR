@@ -108,7 +108,7 @@ if (watching) {
   roomLabelEl.textContent = 'Watching';
   scalePanel.style.display = 'none';
   watchNote.textContent = roomCode.length === 4 ? 'Connecting...' : 'Enter the 4-letter room code.';
-  setStatus('Waiting for the headset...');
+  setStatus(roomCode.length === 4 ? `Waiting for headset room ${roomCode}...` : 'Enter the 4-letter room code.');
 } else {
   machine.refreshSelection(selection);
   paintSelection();
@@ -1609,8 +1609,18 @@ function startRelay() {
   if (watching) watchHands = [makeWatchHand(), makeWatchHand()];
   try {
     relay = openRoom(roomCode, {
+      role: watching ? 'watch' : 'host',
       onSnapshot(data) {
         if (watching) applySnapshot(data);
+      },
+      onStatus(status) {
+        if (seenWatch) return;
+        if (status === 'offline') {
+          watchNote.textContent = 'Could not reach the watch connection.';
+          if (watching) setStatus(`Still waiting for headset room ${roomCode}.`);
+        } else if (watching) {
+          watchNote.textContent = 'Connected. Waiting for the headset to send the room.';
+        }
       },
       onWatchers(count) {
         watcherCount = count;
@@ -1651,10 +1661,14 @@ function frame() {
   const pulse = 0.12 + Math.sin(performance.now() * 0.004) * 0.08;
   if (!held) machine.orderButton.material.emissiveIntensity = pulse;
   world.challenge.newButton.material.emissiveIntensity = challengeMatched ? 0.55 : pulse;
-  if (!watching && relay && watcherCount > 0) {
+  if (relay) {
     watchSendTimer += dt;
-    if (watchSendTimer >= 0.12) {
+    if (watching && watchSendTimer >= 2) {
       watchSendTimer = 0;
+      relay.ping();
+    } else if (!watching && watcherCount > 0 && watchSendTimer >= 0.2) {
+      watchSendTimer = 0;
+      watcherCount = relay.watcherCount();
       relay.send(captureSnapshot());
     }
   }
