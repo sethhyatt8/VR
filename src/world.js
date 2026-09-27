@@ -239,9 +239,16 @@ export function createWorld() {
     button.scale.setScalar(button.userData.baseScale);
     machine.pressables.push(button);
   }
-  challenge.sign.position.set(-0.34, 0.9, WALL_Z + 0.01);
+  for (const button of challenge.nameButtons) {
+    scene.add(button);
+    button.position.set(button.userData.homeX, button.userData.homeY, WALL_Z + 0.03);
+    button.rotation.set(0, 0, 0);
+    button.userData.restZ = WALL_Z + 0.03;
+    machine.pressables.push(button);
+  }
+  challenge.sign.position.set(-0.28, 0.64, WALL_Z + 0.01);
   challenge.sign.rotation.set(0, 0, 0);
-  challenge.sign.scale.setScalar(1.22);
+  challenge.sign.scale.setScalar(1);
   challenge.newButton.position.set(0.22, 0.9, WALL_Z + 0.03);
   challenge.newButton.rotation.set(0, 0, 0);
   challenge.newButton.userData.restZ = WALL_Z + 0.03;
@@ -650,11 +657,11 @@ export function createChallengeStand(targets) {
   targets.push(newButton);
 
   const puzzleSpecs = [
-    { id: 'dragon', label: 'DRAGON', fill: '#1d7a45', emissive: 0x1d7a45, x: -0.9, y: 0.9 },
-    { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: -0.9, y: 0.74 },
+    { id: 'dragon', label: 'DRAGON', fill: '#1d7a45', emissive: 0x1d7a45, x: -0.96, y: 0.9 },
+    { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: -0.96, y: 0.74 },
     { id: 'mermaid', label: 'MERMAID', fill: '#2b6cb0', emissive: 0x2b6cb0, x: 0.98, y: 0.9 },
     { id: 'horse', label: 'HORSE', fill: '#8a5a34', emissive: 0x8a5a34, x: 0.98, y: 0.74 },
-    { id: 'flower', label: 'FLOWER', fill: '#d4a017', emissive: 0xd4a017, x: -0.9, y: 0.58 },
+    { id: 'flower', label: 'FLOWER', fill: '#d4a017', emissive: 0xd4a017, x: -0.96, y: 0.58 },
   ];
   const puzzleButtons = puzzleSpecs.map((spec) => {
     const mesh = new THREE.Mesh(
@@ -684,15 +691,50 @@ export function createChallengeStand(targets) {
     return mesh;
   });
 
-  const sign = canvasTexture(512, 160, () => {});
+  const sign = canvasTexture(1024, 768, () => {});
+  const signMat = new THREE.MeshBasicMaterial({ map: sign.texture });
+  signMat.toneMapped = false;
   const signMesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.52, 0.14),
-    new THREE.MeshBasicMaterial({ map: sign.texture }),
+    new THREE.PlaneGeometry(0.74, 0.76),
+    signMat,
   );
-  signMesh.position.set(-0.34, 0.9, 0);
+  signMesh.position.set(-0.28, 0.9, 0);
   signMesh.rotation.set(0, 0, 0);
-  signMesh.scale.setScalar(1.22);
+  signMesh.scale.setScalar(1);
   group.add(signMesh);
+
+  const nameButtons = [
+    { action: 'name-prev', label: '<', x: 0.62, y: 0.58 },
+    { action: 'name-add', label: 'ADD', x: 0.8, y: 0.58 },
+    { action: 'name-del', label: 'DEL', x: 0.98, y: 0.58 },
+    { action: 'name-next', label: '>', x: 1.16, y: 0.58 },
+    { action: 'name-ok', label: 'OK', x: 0.98, y: 0.46 },
+  ].map((spec) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.16, 0.08, 0.04),
+      new THREE.MeshStandardMaterial({
+        map: buttonTexture(spec.label, '#1f7a45', '#f4fff7'),
+        roughness: 0.45,
+        emissive: 0x1f7a45,
+        emissiveIntensity: 0.16,
+      }),
+    );
+    mesh.position.set(spec.x, spec.y, 0);
+    mesh.userData = {
+      type: 'ui',
+      action: spec.action,
+      restZ: 0,
+      press: 0,
+      baseScale: 1,
+      homeX: spec.x,
+      homeY: spec.y,
+    };
+    mesh.visible = false;
+    mesh.castShadow = true;
+    group.add(mesh);
+    targets.push(mesh);
+    return mesh;
+  });
 
   const glow = new THREE.PointLight(0xd6ffe6, 0, 2.4);
   glow.position.set(0, 1.0, 0);
@@ -704,18 +746,35 @@ export function createChallengeStand(targets) {
   let matched = false;
   let shown = 'ready';
 
-  function paint(headline, detail) {
+  function paintBoard(board) {
     const { ctx, texture, canvas } = sign;
-    ctx.fillStyle = '#1c242c';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = matched ? '#8ee0ad' : '#8fd0ff';
-    ctx.font = '700 58px Segoe UI, sans-serif';
-    ctx.textAlign = 'center';
+    const w = canvas.width;
+    const h = canvas.height;
+    ctx.fillStyle = '#141a20';
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#ffe08a';
+    ctx.lineWidth = 10;
+    ctx.strokeRect(8, 8, w - 16, h - 16);
     ctx.textBaseline = 'middle';
-    ctx.fillText(headline, canvas.width / 2, 58);
-    ctx.fillStyle = '#d5dde4';
-    ctx.font = '500 32px Segoe UI, sans-serif';
-    ctx.fillText(detail, canvas.width / 2, 112);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = board.match ? '#8ee0ad' : '#f4f7fb';
+    ctx.font = '700 72px Segoe UI, sans-serif';
+    ctx.fillText(board.title || 'Match this', 36, 64);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = board.match ? '#8ee0ad' : '#ffe08a';
+    ctx.font = '700 96px Segoe UI, sans-serif';
+    ctx.fillText(board.clock || '', w - 36, board.rows?.length ? 70 : h / 2);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#f7f1e4';
+    ctx.font = '700 58px Segoe UI, sans-serif';
+    (board.rows || []).forEach((row, index) => {
+      ctx.fillText(row, 40, 196 + index * 92);
+    });
+    if (board.note) {
+      ctx.fillStyle = '#ffe08a';
+      ctx.font = '700 40px Segoe UI, sans-serif';
+      ctx.fillText(board.note, 40, h - 36);
+    }
     texture.needsUpdate = true;
   }
 
@@ -733,10 +792,14 @@ export function createChallengeStand(targets) {
     topMat.emissiveIntensity = matched ? 0.45 : 0;
   }
 
+  function setBoard(board) {
+    shown = board.match ? 'match' : '';
+    applyVerdictStyle(!!board.match);
+    paintBoard(board);
+  }
+
   function setCaption(headline, detail, isMatch) {
-    shown = isMatch ? 'match' : '';
-    applyVerdictStyle(isMatch);
-    paint(headline, detail);
+    setBoard({ title: headline, note: detail, match: !!isMatch });
   }
 
   function setVerdict(verdict) {
@@ -744,7 +807,11 @@ export function createChallengeStand(targets) {
     shown = verdict;
     applyVerdictStyle(verdict === 'match');
     const [headline, detail] = verdictCopy[verdict] || verdictCopy.ready;
-    paint(headline, detail);
+    paintBoard({ title: headline, note: detail, match: verdict === 'match' });
+  }
+
+  function setNaming(open) {
+    for (const button of nameButtons) button.visible = open;
   }
 
   function celebrate() {
@@ -795,9 +862,9 @@ export function createChallengeStand(targets) {
     }
   }
 
-  paint('Match this', 'Any turn is fine');
+  paintBoard({ title: 'Match this', note: 'Any turn is fine' });
 
-  return { group, model, bricks, newButton, puzzleButtons, sign: signMesh, setVerdict, setCaption, celebrate, update };
+  return { group, model, bricks, newButton, puzzleButtons, nameButtons, sign: signMesh, setVerdict, setCaption, setBoard, setNaming, celebrate, update };
 }
 
 function createBin() {

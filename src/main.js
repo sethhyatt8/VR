@@ -8,6 +8,7 @@ import { buildPuzzle } from './puzzles.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, heightById, LAYER, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
 import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
 import { hostRoomCode, openRoom, watchCodeFromUrl } from './watch.js';
+import { qualifies, openScores } from './scores.js';
 import { createPedestal, createWorld, pedestalSlot } from './world.js';
 
 const statusEl = document.getElementById('status');
@@ -20,6 +21,9 @@ const roomLabelEl = document.getElementById('room-label');
 const watchForm = document.getElementById('watch-form');
 const watchInput = document.getElementById('watch-code');
 const watchNote = document.getElementById('watch-note');
+const clockEl = document.getElementById('clock');
+const scoreEntry = document.getElementById('score-entry');
+const scoreInput = document.getElementById('score-name');
 const watchParam = new URLSearchParams(location.search).get('watch');
 const watching = watchParam != null;
 const roomCode = watching ? watchCodeFromUrl() : hostRoomCode();
@@ -97,6 +101,14 @@ let puzzleId = '';
 let puzzleStart = 0;
 let puzzleFrozen = null;
 let puzzleClock = '';
+let boards = { dragon: [], house: [], mermaid: [], horse: [], flower: [] };
+let naming = false;
+let scoreSaved = false;
+let scoreName = '';
+let scoreLetter = 0;
+let scores = { submit() { return false; } };
+let scoresOnline = false;
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 let relay = null;
 let watcherCount = 0;
 let watchSendTimer = 0;
@@ -178,19 +190,25 @@ function setupController(index) {
   controller.addEventListener('squeezeend', () => onXrRelease(controller));
   scene.add(controller);
 
-  const beam = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.004, 0.0014, 1, 8),
-    new THREE.MeshBasicMaterial({ color: 0x3ef0c4 }),
-  );
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0xff2a00 });
+  beamMat.toneMapped = false;
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.004, 1, 10), beamMat);
   beam.geometry.translate(0, 0.5, 0);
   beam.rotation.x = Math.PI / 2;
   beam.visible = false;
+  beam.renderOrder = 20;
   controller.add(beam);
-  const dot = new THREE.Mesh(
-    new THREE.SphereGeometry(0.016, 12, 8),
-    new THREE.MeshBasicMaterial({ color: 0xeffff8 }),
-  );
+  const dot = new THREE.Group();
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x12161c, side: THREE.DoubleSide });
+  const coreMat = new THREE.MeshBasicMaterial({ color: 0xffe14a });
+  ringMat.toneMapped = false;
+  coreMat.toneMapped = false;
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.032, 0.056, 28), ringMat);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.028, 16, 12), coreMat);
+  ring.position.z = 0.006;
+  dot.add(ring, core);
   dot.visible = false;
+  dot.renderOrder = 21;
   controller.add(dot);
   controller.userData.laser = { beam, dot };
 
@@ -373,17 +391,99 @@ function currentClock() {
   return formatClock(ms);
 }
 
+function scoreRows(id) {
+  const list = boards[id] || [];
+  const rows = [];
+  for (let i = 0; i < 5; i += 1) {
+    const item = list[i];
+    rows.push(item ? `${i + 1}  ${item.name}   ${formatClock(item.ms)}` : `${i + 1}  —`);
+  }
+  return rows;
+}
+
+function showScoreForm(open) {
+  scoreEntry.classList.toggle('show', open);
+  if (!open) scoreInput.value = '';
+}
+
 function paintChallengeSign() {
   if (!puzzleName) {
+    clockEl.textContent = '';
+    if (!naming) showScoreForm(false);
+    world.challenge.setNaming(false);
     world.challenge.setVerdict(shownVerdict);
     return;
   }
   puzzleClock = currentClock();
-  world.challenge.setCaption(
-    shownVerdict === 'match' ? 'You got it' : puzzleName,
-    puzzleClock,
-    shownVerdict === 'match',
-  );
+  clockEl.textContent = puzzleClock;
+  world.challenge.setBoard({
+    title: shownVerdict === 'match' ? 'You got it' : puzzleName,
+    clock: puzzleClock,
+    rows: scoreRows(puzzleId),
+    note: naming
+      ? `LETTER ${LETTERS[scoreLetter]}    NAME ${scoreName || '—'}`
+      : (scoresOnline ? '' : 'Scores offline'),
+    match: shownVerdict === 'match',
+  });
+}
+
+function clearNaming() {
+  naming = false;
+  scoreSaved = false;
+  scoreName = '';
+  scoreLetter = 0;
+  world.challenge.setNaming(false);
+  showScoreForm(false);
+}
+
+function maybeOfferScore() {
+  if (watching || !puzzleId || puzzleFrozen == null || naming || scoreSaved || shownVerdict !== 'match') return;
+  if (!qualifies(boards[puzzleId], puzzleFrozen)) return;
+  naming = true;
+  scoreName = '';
+  scoreLetter = 0;
+  world.challenge.setNaming(true);
+  showScoreForm(true);
+  setStatus(`Top 5 on ${puzzleName}. Spell your name, then press OK.`);
+  paintChallengeSign();
+}
+
+function shiftLetter(step) {
+  if (!naming) return;
+  scoreLetter = (scoreLetter + step + LETTERS.length) % LETTERS.length;
+  paintChallengeSign();
+}
+
+function addLetter() {
+  if (!naming || scoreName.length >= 8) return;
+  scoreName += LETTERS[scoreLetter];
+  scoreInput.value = scoreName;
+  paintChallengeSign();
+}
+
+function delLetter() {
+  if (!naming) return;
+  scoreName = scoreName.slice(0, -1);
+  scoreInput.value = scoreName;
+  paintChallengeSign();
+}
+
+function saveScoreName(raw) {
+  if (!naming || !puzzleId || puzzleFrozen == null) return;
+  const name = String(raw ?? scoreName).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8);
+  if (!name) {
+    setStatus('Add at least one letter, then press OK.');
+    return;
+  }
+  const saved = scores.submit(puzzleId, name, puzzleFrozen);
+  naming = false;
+  scoreSaved = true;
+  world.challenge.setNaming(false);
+  showScoreForm(false);
+  setStatus(saved
+    ? `${name} is on the ${puzzleName} board at ${formatClock(puzzleFrozen)}.`
+    : 'That name could not be saved.');
+  paintChallengeSign();
 }
 
 const verdictStatus = {
@@ -406,6 +506,7 @@ function reviewBuild(speak) {
       setStatus(puzzleName ? `You got it in ${formatClock(puzzleFrozen)}.` : verdictStatus.match);
     }
     paintChallengeSign();
+    maybeOfferScore();
     return true;
   }
   challengeMatched = false;
@@ -426,6 +527,7 @@ function beginModel(model, status) {
     celebrateSolve();
     paintChallengeSign();
     setStatus(puzzleName ? 'You got it in 0:00.' : 'You got it. Press NEW for another.');
+    maybeOfferScore();
     return;
   }
   paintChallengeSign();
@@ -442,6 +544,7 @@ function startChallenge(first) {
   puzzleId = '';
   puzzleFrozen = null;
   puzzleClock = '';
+  clearNaming();
   beginModel(model, first
     ? `${chosenLabel()} is selected. Match the build behind the table. Press NEW for another.`
     : 'New build behind the table. Match the colors and the heights.');
@@ -463,6 +566,7 @@ function startPuzzle(id) {
   puzzleStart = performance.now();
   puzzleFrozen = null;
   puzzleClock = '';
+  clearNaming();
   beginModel(model, `Build the ${model.name}. The time starts now.`);
 }
 
@@ -480,7 +584,7 @@ function hitTest(origin, direction) {
   const hits = raycaster.intersectObjects(targets, true);
   for (const hit of hits) {
     const owner = ownerOf(hit.object);
-    if (!owner || owner === held || owner.userData.type === 'ghost') continue;
+    if (!owner || !owner.visible || owner === held || owner.userData.type === 'ghost') continue;
     return { owner, point: hit.point };
   }
   return null;
@@ -491,7 +595,7 @@ function hitFromCamera() {
   const hits = raycaster.intersectObjects(targets, true);
   for (const hit of hits) {
     const owner = ownerOf(hit.object);
-    if (!owner || owner === held || owner.userData.type === 'ghost') continue;
+    if (!owner || !owner.visible || owner === held || owner.userData.type === 'ghost') continue;
     return { owner, point: hit.point };
   }
   return null;
@@ -517,7 +621,7 @@ function updateLaser(controller) {
   laser.beam.visible = true;
   laser.beam.scale.y = distance;
   laser.dot.visible = true;
-  laser.dot.position.set(0, 0, -distance);
+  laser.dot.position.set(0, 0, -(distance - 0.02));
 }
 
 function raiseOnto(point, brick, layer) {
@@ -546,7 +650,7 @@ function placementPoint() {
   const hits = raycaster.intersectObjects(targets, true);
   for (const hit of hits) {
     const owner = ownerOf(hit.object);
-    if (!owner || owner === held || owner.userData.type === 'ghost') continue;
+    if (!owner || !owner.visible || owner === held || owner.userData.type === 'ghost') continue;
     if (owner.userData.type === 'ui') continue;
     if (owner.userData.type === 'brick' && owner.userData.role === 'placed' && owner.userData.anchor) {
       return raiseOnto(hit.point.clone(), owner, owner.userData.anchor.layer);
@@ -599,6 +703,11 @@ function activateUi(owner) {
     setStatus(open ? 'Order screen is down.' : 'Order screen is tucked away. Press PARTS to bring it back.');
   }
   else if (owner.userData.action === 'dismiss') removePedestal(owner.userData.pedestalId);
+  else if (owner.userData.action === 'name-prev') shiftLetter(-1);
+  else if (owner.userData.action === 'name-next') shiftLetter(1);
+  else if (owner.userData.action === 'name-add') addLetter();
+  else if (owner.userData.action === 'name-del') delLetter();
+  else if (owner.userData.action === 'name-ok') saveScoreName();
 }
 
 function orderSelection() {
@@ -1276,9 +1385,9 @@ function setPegScale(next) {
   world.challenge.model.scale.setScalar(pegScale);
   const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
   world.challenge.group.position.set(0, 0, far - 0.4);
-  world.challenge.sign.position.set(-0.34, 0.9, -2.67);
+  world.challenge.sign.position.set(-0.28, 0.64, -2.67);
   world.challenge.sign.rotation.set(0, 0, 0);
-  world.challenge.sign.scale.setScalar(1.22);
+  world.challenge.sign.scale.setScalar(1);
   world.challenge.newButton.position.set(0.22, 0.9, -2.65);
   world.challenge.newButton.rotation.set(0, 0, 0);
   world.challenge.newButton.userData.restZ = -2.65;
@@ -1288,6 +1397,12 @@ function setPegScale(next) {
     button.rotation.set(0, 0, 0);
     button.userData.restZ = -2.65;
     button.scale.setScalar(button.userData.baseScale || 1.1);
+  }
+  for (const button of world.challenge.nameButtons) {
+    button.position.set(button.userData.homeX, button.userData.homeY, -2.65);
+    button.rotation.set(0, 0, 0);
+    button.userData.restZ = -2.65;
+    button.scale.setScalar(1);
   }
   const side = (GRID_X * STUD * pegScale + 0.16) / 2;
   world.bin.position.set(-(side + 0.34), 0, -0.42);
@@ -1407,6 +1522,16 @@ function onPointerUp(event) {
 
 function onKeyDown(event) {
   if (watching || event.repeat) return;
+  if (event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA')) return;
+  if (naming) {
+    if (event.key === 'ArrowRight') { shiftLetter(1); return; }
+    if (event.key === 'ArrowLeft') { shiftLetter(-1); return; }
+    if (event.key === 'Enter') { addLetter(); return; }
+    if (event.key === 'Backspace') { delLetter(); return; }
+    if (event.key === 's' || event.key === 'S') { saveScoreName(); return; }
+    const leaving = event.key === 'n' || event.key === 'N' || '12345'.includes(event.key);
+    if (!leaving) return;
+  }
   if (event.key === 'r' || event.key === 'R') rotateHeld();
   if (event.key === 'Enter') orderSelection();
   if (event.key === 'n' || event.key === 'N') startChallenge(false);
@@ -1688,11 +1813,12 @@ function applySnapshot(snap) {
     showExample({ pieces });
   }
   if (snap.challengeName) {
-    world.challenge.setCaption(
-      snap.verdict === 'match' ? 'You got it' : snap.challengeName,
-      snap.challengeClock || '',
-      snap.verdict === 'match',
-    );
+    world.challenge.setBoard({
+      title: snap.verdict === 'match' ? 'You got it' : snap.challengeName,
+      clock: snap.challengeClock || '',
+      rows: scoreRows(snap.challengeName.toLowerCase()),
+      match: snap.verdict === 'match',
+    });
   } else if (snap.verdict) world.challenge.setVerdict(snap.verdict);
   syncRemoteHands(snap.hands || []);
 }
@@ -1774,5 +1900,28 @@ function frame() {
   }
   renderer.render(scene, camera);
 }
+
+scoreEntry.addEventListener('submit', (event) => {
+  event.preventDefault();
+  saveScoreName(scoreInput.value);
+});
+scoreInput.addEventListener('input', () => {
+  if (!naming) return;
+  scoreName = scoreInput.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8);
+  if (scoreInput.value !== scoreName) scoreInput.value = scoreName;
+  paintChallengeSign();
+});
+
+scores = openScores((next, status) => {
+  boards = next;
+  scoresOnline = status === 'ready';
+  if (naming && puzzleId && puzzleFrozen != null && !qualifies(next[puzzleId], puzzleFrozen)) {
+    naming = false;
+    world.challenge.setNaming(false);
+    showScoreForm(false);
+    setStatus('That time just missed the top 5.');
+  } else maybeOfferScore();
+  if (puzzleName) paintChallengeSign();
+});
 
 startRelay();
