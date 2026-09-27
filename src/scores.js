@@ -64,6 +64,9 @@ export function openScores(onBoards) {
   client.on('connect', () => {
     client.subscribe(TOPIC, { qos: 1 });
     onBoards(boards, 'ready');
+    setTimeout(() => {
+      if (pending && !sameEntry(boards[pending.id], pending)) publish(pending);
+    }, 1200);
   });
   client.on('error', () => onBoards(boards, 'offline'));
   client.on('offline', () => onBoards(boards, 'offline'));
@@ -76,7 +79,7 @@ export function openScores(onBoards) {
     }
     if (pending && !sameEntry(boards[pending.id], pending)) publish(pending);
     else pending = null;
-    onBoards(boards, 'ready');
+    onBoards(boards, 'message');
   });
 
   function publish(entry) {

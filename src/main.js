@@ -104,6 +104,9 @@ let puzzleClock = '';
 let boards = { dragon: [], house: [], mermaid: [], horse: [], flower: [] };
 let naming = false;
 let scoreSaved = false;
+let scoreMiss = '';
+let scoresSeen = false;
+let pendingLeave = null;
 let scoreName = '';
 let scoreLetter = 0;
 let scores = { submit() { return false; } };
@@ -387,6 +390,7 @@ function formatClock(ms) {
 
 function currentClock() {
   if (!puzzleName) return '';
+  if (challengeMatched && puzzleFrozen == null) return '';
   const ms = puzzleFrozen == null ? performance.now() - puzzleStart : puzzleFrozen;
   return formatClock(ms);
 }
@@ -407,6 +411,10 @@ function showScoreForm(open) {
 }
 
 function paintChallengeSign() {
+  if (pendingLeave) {
+    showLeavePrompt();
+    return;
+  }
   if (!puzzleName) {
     clockEl.textContent = '';
     if (!naming) showScoreForm(false);
@@ -416,20 +424,23 @@ function paintChallengeSign() {
   }
   puzzleClock = currentClock();
   clockEl.textContent = puzzleClock;
+  const prompt = naming
+    ? ['TOP 5', `NAME   ${scoreName || '—'}`, `LETTER   ${LETTERS[scoreLetter]}`]
+    : null;
   world.challenge.setBoard({
-    title: shownVerdict === 'match' ? 'You got it' : puzzleName,
+    title: naming ? 'Enter your name' : (shownVerdict === 'match' ? 'You got it' : puzzleName),
     clock: puzzleClock,
-    rows: scoreRows(puzzleId),
-    note: naming
-      ? `LETTER ${LETTERS[scoreLetter]}    NAME ${scoreName || '—'}`
-      : (scoresOnline ? '' : 'Scores offline'),
-    match: shownVerdict === 'match',
+    rows: prompt ? [] : scoreRows(puzzleId),
+    prompt,
+    note: naming ? 'Buttons under FLOWER' : (scoreMiss || (scoresOnline ? '' : 'Scores offline')),
+    match: shownVerdict === 'match' && !naming,
   });
 }
 
 function clearNaming() {
   naming = false;
   scoreSaved = false;
+  scoreMiss = '';
   scoreName = '';
   scoreLetter = 0;
   world.challenge.setNaming(false);
@@ -437,14 +448,23 @@ function clearNaming() {
 }
 
 function maybeOfferScore() {
-  if (watching || !puzzleId || puzzleFrozen == null || naming || scoreSaved || shownVerdict !== 'match') return;
-  if (!qualifies(boards[puzzleId], puzzleFrozen)) return;
+  if (watching || pendingLeave || !puzzleId || puzzleFrozen == null || naming || scoreSaved || shownVerdict !== 'match') return;
+  if (!qualifies(boards[puzzleId], puzzleFrozen)) {
+    if (!scoresSeen) return;
+    scoreMiss = 'Outside the top 5';
+    scoreSaved = true;
+    setStatus(`You got it in ${formatClock(puzzleFrozen)}. That time is outside the top 5.`);
+    paintChallengeSign();
+    return;
+  }
   naming = true;
   scoreName = '';
   scoreLetter = 0;
+  scoreMiss = '';
   world.challenge.setNaming(true);
+  world.challenge.setLeave(false);
   showScoreForm(true);
-  setStatus(`Top 5 on ${puzzleName}. Spell your name, then press OK.`);
+  setStatus(`Top 5 on ${puzzleName}. Spell your name on the board, then press OK.`);
   paintChallengeSign();
 }
 
@@ -523,15 +543,127 @@ function beginModel(model, status) {
   if (sameLook(cellsFromGrid(grid), model.cells)) {
     challengeMatched = true;
     shownVerdict = 'match';
-    if (puzzleName && puzzleFrozen == null) puzzleFrozen = 0;
-    celebrateSolve();
     paintChallengeSign();
-    setStatus(puzzleName ? 'You got it in 0:00.' : 'You got it. Press NEW for another.');
-    maybeOfferScore();
+    setStatus(puzzleName
+      ? 'That build is already on the table, so this time was not saved.'
+      : 'You got it. Press NEW for another.');
     return;
   }
   paintChallengeSign();
   setStatus(status);
+}
+
+function detachBrick(brick) {
+  if (!brick) return;
+  if (brick.userData.role === 'placed') release(grid, brick);
+  const index = targets.indexOf(brick);
+  if (index >= 0) targets.splice(index, 1);
+  setBrickRaycast(brick, false);
+  brick.parent?.remove(brick);
+}
+
+function plateOccupied() {
+  if (targets.some((item) => item.userData?.type === 'brick' && item.userData.role === 'placed')) return true;
+  if (held && heldHome?.role === 'placed') return true;
+  return Boolean(assembly?.pieces.some((piece) => piece.home?.role === 'placed'));
+}
+
+function clearPlate() {
+  discardGhost();
+  const placed = targets.filter((item) => item.userData?.type === 'brick' && item.userData.role === 'placed');
+  for (const brick of placed) detachBrick(brick);
+  if (assembly) {
+    const supply = assembly.pieces.some((piece) => piece.home?.role === 'supply');
+    if (supply) restoreHeld();
+    else {
+      const pieces = assembly.pieces.map((piece) => piece.brick);
+      const carry = assembly.carry;
+      assembly = null;
+      held = null;
+      heldFrom = null;
+      heldHome = null;
+      for (const brick of pieces) detachBrick(brick);
+      carry?.parent?.remove(carry);
+    }
+    return;
+  }
+  if (!held) return;
+  if (heldHome?.role === 'supply') {
+    restoreHeld();
+    return;
+  }
+  const brick = held;
+  held = null;
+  heldFrom = null;
+  heldHome = null;
+  detachBrick(brick);
+}
+
+function leaveLabel(action) {
+  return action?.kind === 'random' ? 'a random build' : action?.label || 'the next puzzle';
+}
+
+function showLeavePrompt() {
+  world.challenge.setNaming(false);
+  world.challenge.setLeave(true);
+  world.challenge.setBoard({
+    title: 'Clear table?',
+    clock: '',
+    prompt: ['Clear the bricks', `Then start ${leaveLabel(pendingLeave)}`],
+    note: 'CLEAR or STAY, under FLOWER',
+    match: false,
+  });
+  clockEl.textContent = '';
+}
+
+function sameLeave(a, b) {
+  if (!a || !b) return false;
+  return a.kind === b.kind && a.id === b.id;
+}
+
+function runLeave(action) {
+  if (action.kind === 'random') startChallenge(false);
+  else startPuzzle(action.id);
+}
+
+function confirmLeave() {
+  const action = pendingLeave;
+  if (!action) return;
+  pendingLeave = null;
+  world.challenge.setLeave(false);
+  clearPlate();
+  runLeave(action);
+}
+
+function cancelLeave() {
+  pendingLeave = null;
+  world.challenge.setLeave(false);
+  if (naming) world.challenge.setNaming(true);
+  paintChallengeSign();
+  maybeOfferScore();
+  if (!naming) setStatus('Staying with this build.');
+}
+
+function askLeave(action) {
+  if (watching) return;
+  if (sameLeave(pendingLeave, action)) {
+    confirmLeave();
+    return;
+  }
+  if (!plateOccupied()) {
+    pendingLeave = null;
+    world.challenge.setLeave(false);
+    runLeave(action);
+    return;
+  }
+  pendingLeave = action;
+  showLeavePrompt();
+  setStatus(`Clear the table and start ${leaveLabel(action)}? Press CLEAR.`);
+}
+
+function puzzleAction(id) {
+  const names = { dragon: 'Dragon', house: 'House', mermaid: 'Mermaid', horse: 'Horse', flower: 'Flower' };
+  return { kind: 'puzzle', id, label: names[id] || id };
 }
 
 function startChallenge(first) {
@@ -696,8 +828,8 @@ function activateUi(owner) {
   else if (owner.userData.action === 'height') selectHeight(owner.userData.value);
   else if (owner.userData.action === 'top') toggleFlat();
   else if (owner.userData.action === 'order') orderSelection();
-  else if (owner.userData.action === 'challenge') startChallenge(false);
-  else if (owner.userData.action === 'puzzle') startPuzzle(owner.userData.value);
+  else if (owner.userData.action === 'challenge') askLeave({ kind: 'random', label: 'a random build' });
+  else if (owner.userData.action === 'puzzle') askLeave(puzzleAction(owner.userData.value));
   else if (owner.userData.action === 'screen') {
     const open = machine.toggleScreen();
     setStatus(open ? 'Order screen is down.' : 'Order screen is tucked away. Press PARTS to bring it back.');
@@ -708,6 +840,8 @@ function activateUi(owner) {
   else if (owner.userData.action === 'name-add') addLetter();
   else if (owner.userData.action === 'name-del') delLetter();
   else if (owner.userData.action === 'name-ok') saveScoreName();
+  else if (owner.userData.action === 'leave-yes') confirmLeave();
+  else if (owner.userData.action === 'leave-no') cancelLeave();
 }
 
 function orderSelection() {
@@ -1398,7 +1532,7 @@ function setPegScale(next) {
     button.userData.restZ = -2.65;
     button.scale.setScalar(button.userData.baseScale || 1.1);
   }
-  for (const button of world.challenge.nameButtons) {
+  for (const button of [...world.challenge.nameButtons, ...world.challenge.leaveButtons]) {
     button.position.set(button.userData.homeX, button.userData.homeY, -2.65);
     button.rotation.set(0, 0, 0);
     button.userData.restZ = -2.65;
@@ -1523,7 +1657,11 @@ function onPointerUp(event) {
 function onKeyDown(event) {
   if (watching || event.repeat) return;
   if (event.target && (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA')) return;
-  if (naming) {
+  if (pendingLeave) {
+    if (event.key === 'Enter' || event.key === 'y' || event.key === 'Y') { confirmLeave(); return; }
+    if (event.key === 'Escape') { cancelLeave(); return; }
+  }
+  if (naming && !pendingLeave) {
     if (event.key === 'ArrowRight') { shiftLetter(1); return; }
     if (event.key === 'ArrowLeft') { shiftLetter(-1); return; }
     if (event.key === 'Enter') { addLetter(); return; }
@@ -1534,12 +1672,12 @@ function onKeyDown(event) {
   }
   if (event.key === 'r' || event.key === 'R') rotateHeld();
   if (event.key === 'Enter') orderSelection();
-  if (event.key === 'n' || event.key === 'N') startChallenge(false);
-  if (event.key === '1') startPuzzle('dragon');
-  if (event.key === '2') startPuzzle('house');
-  if (event.key === '3') startPuzzle('mermaid');
-  if (event.key === '4') startPuzzle('horse');
-  if (event.key === '5') startPuzzle('flower');
+  if (event.key === 'n' || event.key === 'N') askLeave({ kind: 'random', label: 'a random build' });
+  if (event.key === '1') askLeave(puzzleAction('dragon'));
+  if (event.key === '2') askLeave(puzzleAction('house'));
+  if (event.key === '3') askLeave(puzzleAction('mermaid'));
+  if (event.key === '4') askLeave(puzzleAction('horse'));
+  if (event.key === '5') askLeave(puzzleAction('flower'));
 }
 
 function onXrTrigger(controller) {
@@ -1883,7 +2021,7 @@ function frame() {
   for (const button of world.challenge.puzzleButtons) {
     button.material.emissiveIntensity = button.userData.value === puzzleId ? 0.5 : 0.12;
   }
-  if (puzzleName && !watching) {
+  if (puzzleName && !watching && !pendingLeave) {
     const text = currentClock();
     if (text !== puzzleClock) paintChallengeSign();
   }
@@ -1914,14 +2052,22 @@ scoreInput.addEventListener('input', () => {
 
 scores = openScores((next, status) => {
   boards = next;
-  scoresOnline = status === 'ready';
+  if (status === 'offline') {
+    scoresOnline = false;
+    scoresSeen = true;
+  } else if (status === 'message') {
+    scoresOnline = true;
+    scoresSeen = true;
+  } else if (status === 'ready') scoresOnline = true;
   if (naming && puzzleId && puzzleFrozen != null && !qualifies(next[puzzleId], puzzleFrozen)) {
     naming = false;
+    scoreSaved = true;
+    scoreMiss = 'Outside the top 5';
     world.challenge.setNaming(false);
     showScoreForm(false);
     setStatus('That time just missed the top 5.');
   } else maybeOfferScore();
-  if (puzzleName) paintChallengeSign();
+  if (puzzleName || pendingLeave) paintChallengeSign();
 });
 
 startRelay();

@@ -239,7 +239,7 @@ export function createWorld() {
     button.scale.setScalar(button.userData.baseScale);
     machine.pressables.push(button);
   }
-  for (const button of challenge.nameButtons) {
+  for (const button of [...challenge.nameButtons, ...challenge.leaveButtons]) {
     scene.add(button);
     button.position.set(button.userData.homeX, button.userData.homeY, WALL_Z + 0.03);
     button.rotation.set(0, 0, 0);
@@ -704,19 +704,49 @@ export function createChallengeStand(targets) {
   group.add(signMesh);
 
   const nameButtons = [
-    { action: 'name-prev', label: '<', x: 0.62, y: 0.58 },
-    { action: 'name-add', label: 'ADD', x: 0.8, y: 0.58 },
-    { action: 'name-del', label: 'DEL', x: 0.98, y: 0.58 },
-    { action: 'name-next', label: '>', x: 1.16, y: 0.58 },
-    { action: 'name-ok', label: 'OK', x: 0.98, y: 0.46 },
+    { action: 'name-prev', label: '<', x: -1.16, y: 0.42 },
+    { action: 'name-add', label: 'ADD', x: -1.0, y: 0.42 },
+    { action: 'name-del', label: 'DEL', x: -0.84, y: 0.42 },
+    { action: 'name-next', label: '>', x: -1.16, y: 0.3 },
+    { action: 'name-ok', label: 'OK', x: -0.92, y: 0.3 },
   ].map((spec) => {
     const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.16, 0.08, 0.04),
+      new THREE.BoxGeometry(0.14, 0.11, 0.04),
       new THREE.MeshStandardMaterial({
         map: buttonTexture(spec.label, '#1f7a45', '#f4fff7'),
         roughness: 0.45,
         emissive: 0x1f7a45,
         emissiveIntensity: 0.16,
+      }),
+    );
+    mesh.position.set(spec.x, spec.y, 0);
+    mesh.userData = {
+      type: 'ui',
+      action: spec.action,
+      restZ: 0,
+      press: 0,
+      baseScale: 1,
+      homeX: spec.x,
+      homeY: spec.y,
+    };
+    mesh.visible = false;
+    mesh.castShadow = true;
+    group.add(mesh);
+    targets.push(mesh);
+    return mesh;
+  });
+
+  const leaveButtons = [
+    { action: 'leave-yes', label: 'CLEAR', x: -1.08, y: 0.42 },
+    { action: 'leave-no', label: 'STAY', x: -0.76, y: 0.42 },
+  ].map((spec) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.11, 0.04),
+      new THREE.MeshStandardMaterial({
+        map: buttonTexture(spec.label, spec.action === 'leave-yes' ? '#a33b32' : '#243038', '#f4fff7'),
+        roughness: 0.45,
+        emissive: spec.action === 'leave-yes' ? 0xa33b32 : 0x8fd0ff,
+        emissiveIntensity: 0.2,
       }),
     );
     mesh.position.set(spec.x, spec.y, 0);
@@ -763,17 +793,25 @@ export function createChallengeStand(targets) {
     ctx.textAlign = 'right';
     ctx.fillStyle = board.match ? '#8ee0ad' : '#ffe08a';
     ctx.font = '700 96px Segoe UI, sans-serif';
-    ctx.fillText(board.clock || '', w - 36, board.rows?.length ? 70 : h / 2);
+    ctx.fillText(board.clock || '', w - 36, (board.rows?.length || board.prompt?.length) ? 70 : h / 2);
     ctx.textAlign = 'left';
-    ctx.fillStyle = '#f7f1e4';
-    ctx.font = '700 58px Segoe UI, sans-serif';
-    (board.rows || []).forEach((row, index) => {
-      ctx.fillText(row, 40, 196 + index * 92);
-    });
+    if (board.prompt?.length) {
+      ctx.fillStyle = '#ffe08a';
+      ctx.font = '700 68px Segoe UI, sans-serif';
+      board.prompt.forEach((line, index) => {
+        ctx.fillText(line, 40, 210 + index * 100);
+      });
+    } else {
+      ctx.fillStyle = '#f7f1e4';
+      ctx.font = '700 58px Segoe UI, sans-serif';
+      (board.rows || []).forEach((row, index) => {
+        ctx.fillText(row, 40, 196 + index * 92);
+      });
+    }
     if (board.note) {
       ctx.fillStyle = '#ffe08a';
-      ctx.font = '700 40px Segoe UI, sans-serif';
-      ctx.fillText(board.note, 40, h - 36);
+      ctx.font = '700 42px Segoe UI, sans-serif';
+      ctx.fillText(board.note, 40, h - 40);
     }
     texture.needsUpdate = true;
   }
@@ -812,6 +850,10 @@ export function createChallengeStand(targets) {
 
   function setNaming(open) {
     for (const button of nameButtons) button.visible = open;
+  }
+
+  function setLeave(open) {
+    for (const button of leaveButtons) button.visible = open;
   }
 
   function celebrate() {
@@ -864,7 +906,7 @@ export function createChallengeStand(targets) {
 
   paintBoard({ title: 'Match this', note: 'Any turn is fine' });
 
-  return { group, model, bricks, newButton, puzzleButtons, nameButtons, sign: signMesh, setVerdict, setCaption, setBoard, setNaming, celebrate, update };
+  return { group, model, bricks, newButton, puzzleButtons, nameButtons, leaveButtons, sign: signMesh, setVerdict, setCaption, setBoard, setNaming, setLeave, celebrate, update };
 }
 
 function createBin() {
