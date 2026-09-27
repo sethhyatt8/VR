@@ -6,6 +6,8 @@ import { colorById, COLORS, GRID_X, GRID_Z, heightById, HEIGHTS, shapeById, SHAP
 const TABLE_TOP = 0.76;
 const WALL_Z = -2.68;
 const WALL_LIFT = 0.38;
+const SCORE_X = 1.75;
+const SCORE_Y = 1.86;
 
 export function pedestalSlot(index) {
   const col = index % 2;
@@ -315,10 +317,10 @@ export function createWorld() {
   picker.group.position.set(0.06, 1.34, -1.02);
   picker.group.rotation.x = 0.24;
   challenge.setPicking = picker.setPicking;
-  challenge.sign.position.set(-0.28, 0.64 + WALL_LIFT, WALL_Z + 0.01);
+  challenge.sign.position.set(SCORE_X, SCORE_Y, WALL_Z + 0.01);
   challenge.sign.rotation.set(0, 0, 0);
   challenge.sign.scale.setScalar(1);
-  challenge.newButton.position.set(0.22, 0.9 + WALL_LIFT, WALL_Z + 0.03);
+  challenge.newButton.position.set(SCORE_X, 1.2, WALL_Z + 0.03);
   challenge.newButton.rotation.set(0, 0, 0);
   challenge.newButton.userData.restZ = WALL_Z + 0.03;
   challenge.newButton.userData.baseScale = 1.22;
@@ -347,8 +349,8 @@ export function createWorld() {
 function createMachine(targets) {
   const mount = new THREE.Group();
 
-  const openPose = { x: 0, y: 1.98, z: WALL_Z + 0.1, tilt: -0.42, yaw: 0 };
-  const closedPose = { x: 0, y: 3.75, z: WALL_Z, tilt: 0, yaw: 0 };
+  const openPose = { x: 0, y: 1.92, z: WALL_Z, tilt: 0, yaw: 0 };
+  const closedPose = { x: 0, y: 3.5, z: WALL_Z, tilt: 0, yaw: 0 };
   const group = new THREE.Group();
   group.position.set(openPose.x, openPose.y, openPose.z);
   group.rotation.x = openPose.tilt;
@@ -626,11 +628,11 @@ function createMachine(targets) {
 
   function placeScreen() {
     openPose.x = 0;
-    openPose.y = 1.98;
-    openPose.z = WALL_Z + 0.1;
-    openPose.tilt = -0.42;
+    openPose.y = 1.92;
+    openPose.z = WALL_Z;
+    openPose.tilt = 0;
     closedPose.x = 0;
-    closedPose.y = 3.75;
+    closedPose.y = 3.5;
     closedPose.z = WALL_Z;
     closedPose.tilt = 0;
     tab.position.set(0.62, 0.9 + WALL_LIFT, tab.userData.restZ);

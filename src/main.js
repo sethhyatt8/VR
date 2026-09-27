@@ -1524,10 +1524,10 @@ function setPegScale(next) {
   world.challenge.model.scale.setScalar(pegScale);
   const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
   world.challenge.group.position.set(0, 0, far - 0.4);
-  world.challenge.sign.position.set(-0.28, 1.02, -2.67);
+  world.challenge.sign.position.set(1.75, 1.86, -2.67);
   world.challenge.sign.rotation.set(0, 0, 0);
   world.challenge.sign.scale.setScalar(1);
-  world.challenge.newButton.position.set(0.22, 1.28, -2.65);
+  world.challenge.newButton.position.set(1.75, 1.2, -2.65);
   world.challenge.newButton.rotation.set(0, 0, 0);
   world.challenge.newButton.userData.restZ = -2.65;
   world.challenge.newButton.scale.setScalar(world.challenge.newButton.userData.baseScale || 1.22);
