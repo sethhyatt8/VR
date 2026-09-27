@@ -425,7 +425,7 @@ function paintChallengeSign() {
     prompt,
     note: picking
       ? 'Choose a face'
-      : (buildLocked ? 'Press DELETE to clear it' : (scoreMiss || (scoresOnline ? '' : 'Scores offline'))),
+      : (buildLocked ? 'Press RESET to clear it' : (scoreMiss || (scoresOnline ? '' : 'Scores offline'))),
     match: shownVerdict === 'match' && !picking,
   });
 }
@@ -491,8 +491,8 @@ function reviewBuild(speak) {
       if (puzzleName && puzzleFrozen == null) puzzleFrozen = performance.now() - puzzleStart;
       celebrateSolve();
       setStatus(puzzleName
-        ? `You got it in ${formatClock(puzzleFrozen)}. Look it over, then press DELETE.`
-        : 'You got it. Look it over, then press DELETE.');
+        ? `You got it in ${formatClock(puzzleFrozen)}. Look it over, then press RESET.`
+        : 'You got it. Look it over, then press RESET.');
     }
     paintChallengeSign();
     maybeOfferScore();
@@ -799,6 +799,7 @@ function toggleFlat() {
 function deleteBuild() {
   if (watching || pendingLeave) return;
   clearPlate();
+  while (pedestals.length) removePedestal(pedestals[0].id);
   buildLocked = false;
   picking = false;
   scoreSaved = false;
@@ -820,7 +821,7 @@ function activateUi(owner) {
   if (owner.userData.restZ != null) owner.userData.press = 1;
   const action = owner.userData.action;
   if (buildLocked && ['color', 'shape', 'height', 'top', 'order', 'dismiss'].includes(action)) {
-    setStatus('This build is finished. Look it over, then press DELETE.');
+    setStatus('This build is finished. Look it over, then press RESET.');
     return;
   }
   if (action === 'color') selectColor(owner.userData.value);
@@ -843,7 +844,7 @@ function activateUi(owner) {
 
 function orderSelection() {
   if (buildLocked) {
-    setStatus('This build is finished. Look it over, then press DELETE.');
+    setStatus('This build is finished. Look it over, then press RESET.');
     return null;
   }
   const existing = pedestals.find((pedestal) => (
@@ -1089,7 +1090,7 @@ function captureHome(brick) {
 function grab(brick, holder, whole) {
   if (watching) return;
   if (buildLocked) {
-    setStatus('This build is finished. Look it over, then press DELETE.');
+    setStatus('This build is finished. Look it over, then press RESET.');
     return;
   }
   const group = whole && brick.userData.role === 'placed' ? connectedBricks(grid, brick) : [brick];
@@ -1524,7 +1525,7 @@ function setPegScale(next) {
   world.challenge.model.scale.setScalar(pegScale);
   const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
   world.challenge.group.position.set(0, 0, far - 0.4);
-  world.challenge.sign.position.set(1.75, 1.86, -2.67);
+  world.challenge.sign.position.set(-1.75, 1.86, -2.67);
   world.challenge.sign.rotation.set(0, 0, 0);
   world.challenge.sign.scale.setScalar(1);
   world.challenge.newButton.position.set(1.75, 1.2, -2.65);

@@ -6,7 +6,7 @@ import { colorById, COLORS, GRID_X, GRID_Z, heightById, HEIGHTS, shapeById, SHAP
 const TABLE_TOP = 0.76;
 const WALL_Z = -2.68;
 const WALL_LIFT = 0.38;
-const SCORE_X = 1.75;
+const SCORE_X = -1.75;
 const SCORE_Y = 1.86;
 
 export function pedestalSlot(index) {
@@ -320,7 +320,7 @@ export function createWorld() {
   challenge.sign.position.set(SCORE_X, SCORE_Y, WALL_Z + 0.01);
   challenge.sign.rotation.set(0, 0, 0);
   challenge.sign.scale.setScalar(1);
-  challenge.newButton.position.set(SCORE_X, 1.2, WALL_Z + 0.03);
+  challenge.newButton.position.set(1.75, 1.2, WALL_Z + 0.03);
   challenge.newButton.rotation.set(0, 0, 0);
   challenge.newButton.userData.restZ = WALL_Z + 0.03;
   challenge.newButton.userData.baseScale = 1.22;
@@ -779,7 +779,7 @@ export function createChallengeStand(targets) {
   const deleteButton = new THREE.Mesh(
     new THREE.BoxGeometry(0.36, 0.11, 0.05),
     new THREE.MeshStandardMaterial({
-      map: buttonTexture('DELETE', '#a33b32', '#fff4f2'),
+      map: buttonTexture('RESET', '#a33b32', '#fff4f2'),
       roughness: 0.45,
       emissive: 0xa33b32,
       emissiveIntensity: 0.22,
