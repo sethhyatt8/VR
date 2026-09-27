@@ -4,6 +4,7 @@ import { XRButton } from 'three/addons/webxr/XRButton.js';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 import { createBrick, makeGhost, setBrickRaycast } from './bricks.js';
 import { cellsFromGrid, generateModel, lookVerdict, sameLook } from './challenge.js';
+import { buildPuzzle } from './puzzles.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, heightById, LAYER, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
 import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
 import { hostRoomCode, openRoom, watchCodeFromUrl } from './watch.js';
@@ -91,6 +92,11 @@ let aimLayer = null;
 let challenge = null;
 let challengeMatched = false;
 let shownVerdict = 'ready';
+let puzzleName = '';
+let puzzleId = '';
+let puzzleStart = 0;
+let puzzleFrozen = null;
+let puzzleClock = '';
 let relay = null;
 let watcherCount = 0;
 let watchSendTimer = 0;
@@ -327,6 +333,9 @@ function clearExample() {
 
 function showExample(model) {
   clearExample();
+  let maxX = 1;
+  let maxZ = 1;
+  let maxTop = 1;
   for (const piece of model.pieces) {
     const brick = createBrick(shapeById(piece.shapeId), colorById(piece.colorId), {
       units: piece.units,
@@ -341,7 +350,40 @@ function showExample(model) {
     brick.scale.setScalar(1);
     setBrickRaycast(brick, false);
     world.challenge.bricks.add(brick);
+    maxX = Math.max(maxX, piece.gx + w);
+    maxZ = Math.max(maxZ, piece.gz + d);
+    maxTop = Math.max(maxTop, piece.layer + piece.units);
   }
+  const width = maxX * STUD;
+  const depth = maxZ * STUD;
+  const height = Math.max(maxTop * LAYER, 0.01);
+  const fit = Math.min(1, (7.2 * STUD) / width, 0.42 / height);
+  world.challenge.bricks.scale.setScalar(fit);
+  world.challenge.bricks.position.set(-width * fit / 2, 0, -depth * fit / 2);
+}
+
+function formatClock(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function currentClock() {
+  if (!puzzleName) return '';
+  const ms = puzzleFrozen == null ? performance.now() - puzzleStart : puzzleFrozen;
+  return formatClock(ms);
+}
+
+function paintChallengeSign() {
+  if (!puzzleName) {
+    world.challenge.setVerdict(shownVerdict);
+    return;
+  }
+  puzzleClock = currentClock();
+  world.challenge.setCaption(
+    shownVerdict === 'match' ? 'You got it' : puzzleName,
+    puzzleClock,
+    shownVerdict === 'match',
+  );
 }
 
 const verdictStatus = {
@@ -356,18 +398,38 @@ function reviewBuild(speak) {
   if (!challenge) return false;
   const verdict = lookVerdict(cellsFromGrid(grid), challenge.cells);
   shownVerdict = verdict;
-  world.challenge.setVerdict(verdict);
   if (verdict === 'match') {
     if (!challengeMatched) {
       challengeMatched = true;
+      if (puzzleName && puzzleFrozen == null) puzzleFrozen = performance.now() - puzzleStart;
       celebrateSolve();
-      setStatus(verdictStatus.match);
+      setStatus(puzzleName ? `You got it in ${formatClock(puzzleFrozen)}.` : verdictStatus.match);
     }
+    paintChallengeSign();
     return true;
   }
   challengeMatched = false;
+  paintChallengeSign();
   if (speak && verdict !== 'ready') setStatus(verdictStatus[verdict]);
   return false;
+}
+
+function beginModel(model, status) {
+  challenge = model;
+  challengeMatched = false;
+  shownVerdict = 'ready';
+  showExample(model);
+  if (sameLook(cellsFromGrid(grid), model.cells)) {
+    challengeMatched = true;
+    shownVerdict = 'match';
+    if (puzzleName && puzzleFrozen == null) puzzleFrozen = 0;
+    celebrateSolve();
+    paintChallengeSign();
+    setStatus(puzzleName ? 'You got it in 0:00.' : 'You got it. Press NEW for another.');
+    return;
+  }
+  paintChallengeSign();
+  setStatus(status);
 }
 
 function startChallenge(first) {
@@ -376,22 +438,32 @@ function startChallenge(first) {
     setStatus('Could not make a build. Press NEW to try again.');
     return;
   }
-  challenge = model;
-  challengeMatched = false;
-  shownVerdict = 'ready';
-  world.challenge.setVerdict('ready');
-  showExample(model);
-  if (sameLook(cellsFromGrid(grid), model.cells)) {
-    challengeMatched = true;
-    shownVerdict = 'match';
-    world.challenge.setVerdict('match');
-    celebrateSolve();
-    setStatus('You got it. Press NEW for another.');
-    return;
-  }
-  setStatus(first
+  puzzleName = '';
+  puzzleId = '';
+  puzzleFrozen = null;
+  puzzleClock = '';
+  beginModel(model, first
     ? `${chosenLabel()} is selected. Match the build behind the table. Press NEW for another.`
     : 'New build behind the table. Match the colors and the heights.');
+}
+
+function startPuzzle(id) {
+  let model = null;
+  try {
+    model = buildPuzzle(id);
+  } catch (error) {
+    console.error(error);
+  }
+  if (!model) {
+    setStatus('That puzzle could not be set up.');
+    return;
+  }
+  puzzleName = model.name;
+  puzzleId = model.id;
+  puzzleStart = performance.now();
+  puzzleFrozen = null;
+  puzzleClock = '';
+  beginModel(model, `Build the ${model.name}. The time starts now.`);
 }
 
 function ownerOf(object) {
@@ -521,6 +593,7 @@ function activateUi(owner) {
   else if (owner.userData.action === 'top') toggleFlat();
   else if (owner.userData.action === 'order') orderSelection();
   else if (owner.userData.action === 'challenge') startChallenge(false);
+  else if (owner.userData.action === 'puzzle') startPuzzle(owner.userData.value);
   else if (owner.userData.action === 'screen') {
     const open = machine.toggleScreen();
     setStatus(open ? 'Order screen is down.' : 'Order screen is tucked away. Press PARTS to bring it back.');
@@ -1240,6 +1313,12 @@ function setPegScale(next) {
   world.challenge.newButton.rotation.set(0, 0, 0);
   world.challenge.newButton.userData.restZ = -2.65;
   world.challenge.newButton.scale.setScalar(world.challenge.newButton.userData.baseScale || 1.22);
+  for (const button of world.challenge.puzzleButtons) {
+    button.position.set(button.userData.homeX, button.userData.homeY, -2.65);
+    button.rotation.set(0, 0, 0);
+    button.userData.restZ = -2.65;
+    button.scale.setScalar(button.userData.baseScale || 1.1);
+  }
   const side = (GRID_X * STUD * pegScale + 0.16) / 2;
   world.bin.position.set(-(side + 0.34), 0, -0.42);
   if (assembly) assembly.carry.scale.setScalar(inBuild(assembly.carry) ? 1 : pegScale);
@@ -1361,6 +1440,10 @@ function onKeyDown(event) {
   if (event.key === 'r' || event.key === 'R') rotateHeld();
   if (event.key === 'Enter') orderSelection();
   if (event.key === 'n' || event.key === 'N') startChallenge(false);
+  if (event.key === '1') startPuzzle('dragon');
+  if (event.key === '2') startPuzzle('house');
+  if (event.key === '3') startPuzzle('mermaid');
+  if (event.key === '4') startPuzzle('horse');
 }
 
 function onXrTrigger(controller) {
@@ -1471,6 +1554,8 @@ function captureSnapshot() {
     peg: round3(pegScale),
     verdict: shownVerdict,
     challenge: challenge ? challenge.pieces : [],
+    challengeName: puzzleName,
+    challengeClock: puzzleName ? (puzzleClock || currentClock()) : '',
     pedestals: pedestals.map((item) => ({
       id: item.id,
       colorId: item.colorId,
@@ -1631,7 +1716,13 @@ function applySnapshot(snap) {
     challengeKey = key;
     showExample({ pieces });
   }
-  if (snap.verdict) world.challenge.setVerdict(snap.verdict);
+  if (snap.challengeName) {
+    world.challenge.setCaption(
+      snap.verdict === 'match' ? 'You got it' : snap.challengeName,
+      snap.challengeClock || '',
+      snap.verdict === 'match',
+    );
+  } else if (snap.verdict) world.challenge.setVerdict(snap.verdict);
   syncRemoteHands(snap.hands || []);
 }
 
@@ -1691,7 +1782,14 @@ function frame() {
   }
   const pulse = 0.12 + Math.sin(performance.now() * 0.004) * 0.08;
   if (!held) machine.orderButton.material.emissiveIntensity = pulse;
-  world.challenge.newButton.material.emissiveIntensity = challengeMatched ? 0.55 : pulse;
+  world.challenge.newButton.material.emissiveIntensity = puzzleId ? 0.15 : challengeMatched ? 0.55 : pulse;
+  for (const button of world.challenge.puzzleButtons) {
+    button.material.emissiveIntensity = button.userData.value === puzzleId ? 0.5 : 0.12;
+  }
+  if (puzzleName && !watching) {
+    const text = currentClock();
+    if (text !== puzzleClock) paintChallengeSign();
+  }
   if (relay) {
     watchSendTimer += dt;
     if (watching && watchSendTimer >= 2) {

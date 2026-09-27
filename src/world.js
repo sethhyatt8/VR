@@ -131,7 +131,8 @@ function buttonTexture(label, fill, textColor) {
     ctx.fillStyle = fill;
     ctx.fillRect(0, 0, w, h);
     ctx.fillStyle = textColor;
-    ctx.font = `700 ${label.length > 4 ? 46 : 64}px Segoe UI, sans-serif`;
+    const size = label.length > 6 ? 36 : label.length > 4 ? 46 : 64;
+    ctx.font = `700 ${size}px Segoe UI, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(label, w / 2, h / 2 + 2);
@@ -297,6 +298,14 @@ export function createWorld() {
   scene.add(challenge.group);
   scene.add(challenge.sign);
   scene.add(challenge.newButton);
+  for (const button of challenge.puzzleButtons) {
+    scene.add(button);
+    button.position.set(button.userData.homeX, button.userData.homeY, WALL_Z + 0.03);
+    button.rotation.set(0, 0, 0);
+    button.userData.restZ = WALL_Z + 0.03;
+    button.scale.setScalar(button.userData.baseScale);
+    machine.pressables.push(button);
+  }
   challenge.sign.position.set(-0.34, 0.9, WALL_Z + 0.01);
   challenge.sign.rotation.set(0, 0, 0);
   challenge.sign.scale.setScalar(1.22);
@@ -707,6 +716,40 @@ export function createChallengeStand(targets) {
   group.add(newButton);
   targets.push(newButton);
 
+  const puzzleSpecs = [
+    { id: 'dragon', label: 'DRAGON', fill: '#1d7a45', emissive: 0x1d7a45, x: -0.9, y: 0.9 },
+    { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: -0.9, y: 0.74 },
+    { id: 'mermaid', label: 'MERMAID', fill: '#2b6cb0', emissive: 0x2b6cb0, x: 0.98, y: 0.9 },
+    { id: 'horse', label: 'HORSE', fill: '#8a5a34', emissive: 0x8a5a34, x: 0.98, y: 0.74 },
+  ];
+  const puzzleButtons = puzzleSpecs.map((spec) => {
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.09, 0.05),
+      new THREE.MeshStandardMaterial({
+        map: buttonTexture(spec.label, spec.fill, '#f4fff7'),
+        roughness: 0.45,
+        emissive: spec.emissive,
+        emissiveIntensity: 0.12,
+      }),
+    );
+    mesh.position.set(spec.x, spec.y, 0);
+    mesh.userData = {
+      type: 'ui',
+      action: 'puzzle',
+      value: spec.id,
+      restZ: 0,
+      press: 0,
+      baseScale: 1,
+      homeX: spec.x,
+      homeY: spec.y,
+    };
+    mesh.scale.setScalar(1);
+    mesh.castShadow = true;
+    group.add(mesh);
+    targets.push(mesh);
+    return mesh;
+  });
+
   const sign = canvasTexture(512, 160, () => {});
   const signMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(0.52, 0.14),
@@ -750,13 +793,23 @@ export function createChallengeStand(targets) {
     different: ['Match this', 'Check colors and heights'],
   };
 
+  function applyVerdictStyle(isMatch) {
+    matched = !!isMatch;
+    topMat.emissive.setHex(matched ? 0x1f7a45 : 0x000000);
+    topMat.emissiveIntensity = matched ? 0.45 : 0;
+  }
+
+  function setCaption(headline, detail, isMatch) {
+    shown = isMatch ? 'match' : '';
+    applyVerdictStyle(isMatch);
+    paint(headline, detail);
+  }
+
   function setVerdict(verdict) {
     if (verdict === shown) return;
     shown = verdict;
-    matched = verdict === 'match';
+    applyVerdictStyle(verdict === 'match');
     const [headline, detail] = verdictCopy[verdict] || verdictCopy.ready;
-    topMat.emissive.setHex(matched ? 0x1f7a45 : 0x000000);
-    topMat.emissiveIntensity = matched ? 0.45 : 0;
     paint(headline, detail);
   }
 
@@ -810,7 +863,7 @@ export function createChallengeStand(targets) {
 
   paint('Match this', 'Any turn is fine');
 
-  return { group, model, bricks, newButton, sign: signMesh, setVerdict, celebrate, update };
+  return { group, model, bricks, newButton, puzzleButtons, sign: signMesh, setVerdict, setCaption, celebrate, update };
 }
 
 function createBin() {
