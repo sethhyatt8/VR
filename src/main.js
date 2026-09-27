@@ -8,7 +8,7 @@ import { buildPuzzle } from './puzzles.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, heightById, LAYER, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
 import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
 import { hostRoomCode, openRoom, watchCodeFromUrl } from './watch.js';
-import { CLIFF_X, createPedestal, createWorld, pedestalSlot } from './world.js';
+import { createPedestal, createWorld, pedestalSlot } from './world.js';
 
 const statusEl = document.getElementById('status');
 const hudEl = document.getElementById('hud');
@@ -1153,61 +1153,31 @@ function flingBrick(brick) {
   });
 }
 
-function fallBrick(brick) {
-  scene.attach(brick);
-  brick.userData.role = 'tossed';
-  brick.userData.snap = null;
-  setBrickRaycast(brick, false);
-  const index = targets.indexOf(brick);
-  if (index >= 0) targets.splice(index, 1);
-  const start = brick.position.clone();
-  const vx = -0.45 - Math.random() * 0.35;
-  const vz = (Math.random() - 0.5) * 0.3;
-  jobs.push({
-    t: 0,
-    d: 2.6,
-    update(k) {
-      const time = k * 2.6;
-      brick.position.set(start.x + vx * time, start.y - time * time * 3.6, start.z + vz * time);
-      brick.rotation.x += 0.09;
-      brick.rotation.z += 0.06;
-      if (k >= 1) brick.parent?.remove(brick);
-    },
-  });
-}
-
-function tossHeld(fling = flingBrick) {
+function tossHeld() {
   const pieces = assembly
     ? assembly.pieces.map((piece) => ({ brick: piece.brick, home: piece.home }))
     : [{ brick: held, home: heldHome }];
   const carry = assembly?.carry || null;
   const count = pieces.length;
-  const offEdge = fling === fallBrick;
   assembly = null;
   held = null;
   heldFrom = null;
   heldHome = null;
   for (const piece of pieces) {
-    fling(piece.brick);
+    flingBrick(piece.brick);
     if (piece.home?.role !== 'supply') continue;
     const pedestal = pedestals.find((item) => item.id === piece.home.pedestalId);
     if (pedestal && !pedestal.supply) refill(pedestal, true);
   }
   carry?.parent?.remove(carry);
   playToss();
-  if (offEdge) setStatus(count > 1 ? `Dropped ${count} bricks off the edge.` : 'Off the edge.');
-  else setStatus(count > 1 ? `Tossed ${count} bricks.` : 'Tossed it away.');
+  setStatus(count > 1 ? `Tossed ${count} bricks.` : 'Tossed it away.');
   reviewBuild(true);
 }
 
 function releaseHeld() {
   if (!held) return;
   const droppedAt = pieceWorld();
-  if (droppedAt.x < CLIFF_X) {
-    tossHeld(fallBrick);
-    discardGhost();
-    return;
-  }
   if (shouldToss(droppedAt)) {
     tossHeld();
     discardGhost();
@@ -1444,6 +1414,7 @@ function onKeyDown(event) {
   if (event.key === '2') startPuzzle('house');
   if (event.key === '3') startPuzzle('mermaid');
   if (event.key === '4') startPuzzle('horse');
+  if (event.key === '5') startPuzzle('flower');
 }
 
 function onXrTrigger(controller) {

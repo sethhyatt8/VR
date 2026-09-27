@@ -4,7 +4,6 @@ import { colorById, COLORS, GRID_X, GRID_Z, heightById, HEIGHTS, shapeById, SHAP
 
 const TABLE_TOP = 0.76;
 const WALL_Z = -2.68;
-export const CLIFF_X = -1.78;
 
 export function pedestalSlot(index) {
   const col = index % 2;
@@ -38,70 +37,6 @@ function plankTexture() {
       ctx.strokeRect(0.5, i * 64 + 0.5, w - 1, 61);
     }
   }).texture;
-}
-
-function skyTexture() {
-  return canvasTexture(8, 512, (ctx, w, h) => {
-    const sky = ctx.createLinearGradient(0, 0, 0, h);
-    sky.addColorStop(0, '#4f97d2');
-    sky.addColorStop(0.38, '#8ec4ea');
-    sky.addColorStop(0.55, '#d7e7f3');
-    sky.addColorStop(0.7, '#d5decc');
-    sky.addColorStop(1, '#8b9878');
-    ctx.fillStyle = sky;
-    ctx.fillRect(0, 0, w, h);
-  }).texture;
-}
-
-function createCliff(scene) {
-  const sky = new THREE.Mesh(
-    new THREE.SphereGeometry(120, 20, 16),
-    new THREE.MeshBasicMaterial({ map: skyTexture(), side: THREE.BackSide, depthWrite: false, fog: false }),
-  );
-  scene.add(sky);
-
-  const rock = new THREE.MeshStandardMaterial({ color: 0x6e675f, roughness: 1 });
-  const rockDark = new THREE.MeshStandardMaterial({ color: 0x5c564f, roughness: 1 });
-  const scrub = new THREE.MeshStandardMaterial({ color: 0x7d8a62, roughness: 1 });
-  const farRock = new THREE.MeshStandardMaterial({ color: 0x8d877e, roughness: 1 });
-
-  const face = new THREE.Mesh(new THREE.BoxGeometry(2.4, 28, 14), rock);
-  face.position.set(CLIFF_X - 1.2, -14, 0);
-  scene.add(face);
-  const buttressA = new THREE.Mesh(new THREE.BoxGeometry(3.2, 20, 2.4), rockDark);
-  buttressA.position.set(CLIFF_X - 2.4, -10, -1.6);
-  scene.add(buttressA);
-  const buttressB = new THREE.Mesh(new THREE.BoxGeometry(2.6, 16, 1.8), rockDark);
-  buttressB.position.set(CLIFF_X - 2.8, -8, 2.1);
-  scene.add(buttressB);
-
-  const lip = new THREE.Mesh(
-    new THREE.BoxGeometry(0.22, 0.08, 5.6),
-    new THREE.MeshStandardMaterial({ color: 0x9a9186, roughness: 0.92 }),
-  );
-  lip.position.set(CLIFF_X - 0.04, 0.04, 0);
-  lip.castShadow = true;
-  lip.receiveShadow = true;
-  scene.add(lip);
-
-  const valley = new THREE.Mesh(
-    new THREE.PlaneGeometry(70, 80),
-    scrub,
-  );
-  valley.rotation.x = -Math.PI / 2;
-  valley.position.set(-24, -22, 0);
-  scene.add(valley);
-
-  const farWall = new THREE.Mesh(new THREE.BoxGeometry(10, 14, 90), farRock);
-  farWall.position.set(-78, -15, 0);
-  scene.add(farWall);
-
-  const ridge = new THREE.MeshStandardMaterial({ color: 0x7a736b, roughness: 1 });
-  [[-38, -12, 6], [-55, 2, 8], [-34, 20, 5], [-62, -22, 7]].forEach(([x, z, height]) => {
-    const peak = new THREE.Mesh(new THREE.ConeGeometry(height * 0.42, height, 5), ridge);
-    peak.position.set(x, -22 + height / 2, z);
-    scene.add(peak);
-  });
 }
 
 function plateTexture() {
@@ -179,18 +114,16 @@ function createRoomCard(scene) {
 
 export function createWorld() {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0xc5e0f2);
-  scene.fog = new THREE.Fog(0xc5e0f2, 22, 70);
+  scene.background = new THREE.Color(0xe4ddd2);
 
-  const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 160);
+  const camera = new THREE.PerspectiveCamera(68, window.innerWidth / window.innerHeight, 0.05, 40);
   camera.position.set(-0.05, 1.58, 1.22);
 
   const targets = [];
 
   const roomRight = 2.7;
   const roomZ = 2.7;
-  const roomSpan = roomRight - CLIFF_X;
-  const roomMidX = (roomRight + CLIFF_X) / 2;
+  const roomSpan = roomRight * 2;
   const wallMat = new THREE.MeshStandardMaterial({ color: 0xe4ddd2, roughness: 1 });
   const addWall = (w, h, d, x, y, z) => {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
@@ -198,10 +131,11 @@ export function createWorld() {
     mesh.receiveShadow = true;
     scene.add(mesh);
   };
-  addWall(roomSpan, 4.4, 0.12, roomMidX, 2.2, -roomZ - 0.06);
-  addWall(roomSpan, 4.4, 0.12, roomMidX, 2.2, roomZ + 0.06);
+  addWall(roomSpan, 4.4, 0.12, 0, 2.2, -roomZ - 0.06);
+  addWall(roomSpan, 4.4, 0.12, 0, 2.2, roomZ + 0.06);
   addWall(0.12, 4.4, roomZ * 2, roomRight + 0.06, 2.2, 0);
-  addWall(roomSpan, 0.1, roomZ * 2, roomMidX, 4.45, 0);
+  addWall(0.12, 4.4, roomZ * 2, -roomRight - 0.06, 2.2, 0);
+  addWall(roomSpan, 0.1, roomZ * 2, 0, 4.45, 0);
 
   const floorMap = plankTexture();
   floorMap.wrapS = THREE.RepeatWrapping;
@@ -212,10 +146,9 @@ export function createWorld() {
     new THREE.MeshStandardMaterial({ map: floorMap, roughness: 0.92 }),
   );
   floor.rotation.x = -Math.PI / 2;
-  floor.position.set(roomMidX, 0.001, 0);
+  floor.position.set(0, 0.001, 0);
   floor.receiveShadow = true;
   scene.add(floor);
-  createCliff(scene);
 
   const hemi = new THREE.HemisphereLight(0xfff7ee, 0x6d5c4c, 0.9);
   scene.add(hemi);
@@ -721,6 +654,7 @@ export function createChallengeStand(targets) {
     { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: -0.9, y: 0.74 },
     { id: 'mermaid', label: 'MERMAID', fill: '#2b6cb0', emissive: 0x2b6cb0, x: 0.98, y: 0.9 },
     { id: 'horse', label: 'HORSE', fill: '#8a5a34', emissive: 0x8a5a34, x: 0.98, y: 0.74 },
+    { id: 'flower', label: 'FLOWER', fill: '#d4a017', emissive: 0xd4a017, x: -0.9, y: 0.58 },
   ];
   const puzzleButtons = puzzleSpecs.map((spec) => {
     const mesh = new THREE.Mesh(

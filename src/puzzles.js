@@ -44,6 +44,113 @@ function dragon() {
   ];
 }
 
+function mosaic(rows) {
+  const height = rows.length;
+  const width = rows[0].length;
+  const mask = rows.map((row) => row.split(''));
+  const names = {
+    y: 'yellow',
+    k: 'black',
+    r: 'red',
+    o: 'orange',
+    p: 'pink',
+    u: 'purple',
+    b: 'blue',
+    g: 'green',
+    l: 'lime',
+    t: 'tan',
+    w: 'white',
+  };
+  const rects = [
+    ['2x4', 4, 2, 1],
+    ['2x4', 2, 4, 0],
+    ['2x3', 3, 2, 1],
+    ['2x3', 2, 3, 0],
+    ['1x4', 4, 1, 1],
+    ['1x4', 1, 4, 0],
+    ['2x2', 2, 2, 0],
+    ['1x3', 3, 1, 1],
+    ['1x3', 1, 3, 0],
+    ['1x2', 2, 1, 1],
+    ['1x2', 1, 2, 0],
+    ['1x1', 1, 1, 0],
+  ];
+  const pieces = [];
+  for (let guard = 0; guard < 400; guard += 1) {
+    let placed = false;
+    for (let z = 0; z < height && !placed; z += 1) {
+      for (let x = 0; x < width && !placed; x += 1) {
+        const cell = mask[z][x];
+        if (!names[cell]) continue;
+        for (const [id, w, d, rot] of rects) {
+          if (x + w > width || z + d > height) continue;
+          let fits = true;
+          for (let iz = 0; iz < d && fits; iz += 1) {
+            for (let ix = 0; ix < w; ix += 1) {
+              if (mask[z + iz][x + ix] !== cell) fits = false;
+            }
+          }
+          if (!fits) continue;
+          for (let iz = 0; iz < d; iz += 1) {
+            for (let ix = 0; ix < w; ix += 1) mask[z + iz][x + ix] = '.';
+          }
+          pieces.push(piece(id, names[cell], x, z, 0, rot));
+          placed = true;
+          break;
+        }
+      }
+    }
+    if (!placed) break;
+  }
+  return pieces;
+}
+
+function flower() {
+  const size = 12;
+  const center = (size - 1) / 2;
+  const petals = ['pink', 'red', 'orange', 'tan', 'lime', 'green', 'blue', 'purple'];
+  const letters = {
+    yellow: 'y',
+    black: 'k',
+    red: 'r',
+    orange: 'o',
+    pink: 'p',
+    purple: 'u',
+    blue: 'b',
+    green: 'g',
+    lime: 'l',
+    tan: 't',
+    white: 'w',
+  };
+  const rows = Array.from({ length: size }, () => Array(size).fill('.'));
+  for (let z = 0; z < size; z += 1) {
+    for (let x = 0; x < size; x += 1) {
+      const dx = x - center;
+      const dz = z - center;
+      const dist = Math.hypot(dx, dz);
+      if (dist > 5.65) continue;
+      if (dist <= 3.15) {
+        rows[z][x] = 'y';
+        continue;
+      }
+      if (dist <= 3.85) {
+        rows[z][x] = 'k';
+        continue;
+      }
+      let turned = Math.atan2(dz, dx) + Math.PI / 2;
+      if (turned < 0) turned += Math.PI * 2;
+      const petal = petals[Math.floor((turned / (Math.PI * 2)) * petals.length) % petals.length];
+      rows[z][x] = letters[petal];
+    }
+  }
+  const paint = (x, z, letter) => {
+    if (rows[z] && rows[z][x] && rows[z][x] !== '.') rows[z][x] = letter;
+  };
+  [[4, 4], [4, 5], [7, 4], [7, 5]].forEach(([x, z]) => paint(x, z, 'k'));
+  [[4, 6], [5, 6], [6, 6], [7, 6], [5, 7], [6, 7]].forEach(([x, z]) => paint(x, z, 'r'));
+  return mosaic(rows.map((row) => row.join('')));
+}
+
 function house() {
   return [
     piece('2x4', 'tan', 0, 0, 0, 1),
@@ -149,6 +256,7 @@ const PUZZLES = [
   { id: 'house', name: 'House', bricks: house },
   { id: 'mermaid', name: 'Mermaid', bricks: mermaid },
   { id: 'horse', name: 'Horse', bricks: horse },
+  { id: 'flower', name: 'Flower', bricks: flower },
 ];
 
 function specBrick(entry) {
