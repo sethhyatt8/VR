@@ -326,33 +326,9 @@ function celebrateSolve() {
   world.challenge.celebrate();
 }
 
-function releaseExample(brick) {
-  brick.traverse((node) => {
-    if (node.isMesh && node.userData.ghostMaterial) node.material.dispose();
-  });
-}
-
-function ghostExample(brick) {
-  brick.traverse((node) => {
-    if (!node.isMesh) return;
-    const material = node.material.clone();
-    material.transparent = true;
-    material.opacity = 0.38;
-    material.depthWrite = false;
-    material.side = THREE.DoubleSide;
-    node.material = material;
-    node.userData.ghostMaterial = true;
-    node.castShadow = false;
-    node.renderOrder = 3;
-  });
-}
-
 function clearExample() {
   const { bricks } = world.challenge;
-  for (const child of [...bricks.children]) {
-    releaseExample(child);
-    bricks.remove(child);
-  }
+  for (const child of [...bricks.children]) bricks.remove(child);
 }
 
 function showExample(model) {
@@ -373,7 +349,6 @@ function showExample(model) {
     brick.rotation.y = piece.rot * Math.PI / 2;
     brick.scale.setScalar(1);
     setBrickRaycast(brick, false);
-    ghostExample(brick);
     world.challenge.bricks.add(brick);
     maxX = Math.max(maxX, piece.gx + w);
     maxZ = Math.max(maxZ, piece.gz + d);
