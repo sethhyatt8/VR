@@ -1,9 +1,11 @@
 import * as THREE from 'three';
+import { ARTISTS } from './artists.js';
 import { createBrick, setBrickRaycast } from './bricks.js';
 import { colorById, COLORS, GRID_X, GRID_Z, heightById, HEIGHTS, shapeById, SHAPES, STUD } from './config.js';
 
 const TABLE_TOP = 0.76;
 const WALL_Z = -2.68;
+const WALL_LIFT = 0.38;
 
 export function pedestalSlot(index) {
   const col = index % 2;
@@ -110,6 +112,68 @@ function createRoomCard(scene) {
 
   setRoomCode('----', 'ROOM');
   return { mesh, setRoomCode };
+}
+
+function avatarCard(artist) {
+  const board = canvasTexture(256, 320, (ctx, w, h) => {
+    ctx.fillStyle = artist.color;
+    ctx.fillRect(0, 0, w, h);
+    ctx.fillStyle = '#1a1410';
+    ctx.fillRect(16, 14, 224, 220);
+    ctx.fillStyle = '#f4fff7';
+    ctx.font = '700 48px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(artist.name, w / 2, 286);
+  });
+  const img = new Image();
+  img.onload = () => {
+    board.ctx.drawImage(img, 16, 14, 224, 220);
+    board.texture.needsUpdate = true;
+  };
+  img.src = `${import.meta.env.BASE_URL}avatars/${artist.file}`;
+  return board.texture;
+}
+
+function createAvatarPicker(targets) {
+  const group = new THREE.Group();
+  group.visible = false;
+  const back = new THREE.Mesh(
+    new THREE.BoxGeometry(1.32, 1.12, 0.03),
+    new THREE.MeshStandardMaterial({ color: 0x1c242c, roughness: 0.55 }),
+  );
+  group.add(back);
+  const title = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.05, 0.14),
+    new THREE.MeshBasicMaterial({ map: buttonTexture('WHO ARE YOU?', '#1c242c', '#ffe08a'), toneMapped: false }),
+  );
+  title.position.set(0, 0.44, 0.03);
+  group.add(title);
+  const buttons = ARTISTS.map((artist, index) => {
+    const col = index % 3;
+    const row = Math.floor(index / 3);
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(0.36, 0.42, 0.04),
+      new THREE.MeshStandardMaterial({
+        map: avatarCard(artist),
+        roughness: 0.45,
+        emissive: 0x111111,
+        emissiveIntensity: 0.06,
+      }),
+    );
+    mesh.position.set(-0.4 + col * 0.4, 0.1 - row * 0.46, 0.04);
+    mesh.userData = { type: 'ui', action: 'avatar', value: artist.id, restZ: 0.04, press: 0, baseScale: 1 };
+    mesh.castShadow = true;
+    group.add(mesh);
+    targets.push(mesh);
+    return mesh;
+  });
+  function setPicking(open) {
+    group.visible = open;
+    for (const mesh of buttons) mesh.visible = open;
+  }
+  setPicking(false);
+  return { group, setPicking };
 }
 
 export function createWorld() {
@@ -239,17 +303,22 @@ export function createWorld() {
     button.scale.setScalar(button.userData.baseScale);
     machine.pressables.push(button);
   }
-  for (const button of [...challenge.nameButtons, ...challenge.leaveButtons]) {
+  for (const button of [...challenge.leaveButtons, challenge.deleteButton]) {
     scene.add(button);
     button.position.set(button.userData.homeX, button.userData.homeY, WALL_Z + 0.03);
     button.rotation.set(0, 0, 0);
     button.userData.restZ = WALL_Z + 0.03;
     machine.pressables.push(button);
   }
-  challenge.sign.position.set(-0.28, 0.64, WALL_Z + 0.01);
+  const picker = createAvatarPicker(targets);
+  scene.add(picker.group);
+  picker.group.position.set(0.06, 1.34, -1.02);
+  picker.group.rotation.x = 0.24;
+  challenge.setPicking = picker.setPicking;
+  challenge.sign.position.set(-0.28, 0.64 + WALL_LIFT, WALL_Z + 0.01);
   challenge.sign.rotation.set(0, 0, 0);
   challenge.sign.scale.setScalar(1);
-  challenge.newButton.position.set(0.22, 0.9, WALL_Z + 0.03);
+  challenge.newButton.position.set(0.22, 0.9 + WALL_LIFT, WALL_Z + 0.03);
   challenge.newButton.rotation.set(0, 0, 0);
   challenge.newButton.userData.restZ = WALL_Z + 0.03;
   challenge.newButton.userData.baseScale = 1.22;
@@ -278,8 +347,8 @@ export function createWorld() {
 function createMachine(targets) {
   const mount = new THREE.Group();
 
-  const openPose = { x: 0, y: 1.92, z: WALL_Z, tilt: 0, yaw: 0 };
-  const closedPose = { x: 0, y: 3.5, z: WALL_Z, tilt: 0, yaw: 0 };
+  const openPose = { x: 0, y: 1.98, z: WALL_Z + 0.1, tilt: -0.42, yaw: 0 };
+  const closedPose = { x: 0, y: 3.75, z: WALL_Z, tilt: 0, yaw: 0 };
   const group = new THREE.Group();
   group.position.set(openPose.x, openPose.y, openPose.z);
   group.rotation.x = openPose.tilt;
@@ -532,7 +601,7 @@ function createMachine(targets) {
       emissiveIntensity: 0.2,
     }),
   );
-  tab.position.set(0.58, 0.9, WALL_Z + 0.03);
+  tab.position.set(0.62, 0.9 + WALL_LIFT, WALL_Z + 0.03);
   tab.userData = { type: 'ui', action: 'screen', restZ: WALL_Z + 0.03, press: 0, baseScale: 1.22 };
   tab.scale.setScalar(1.22);
   tab.visible = false;
@@ -557,12 +626,14 @@ function createMachine(targets) {
 
   function placeScreen() {
     openPose.x = 0;
-    openPose.z = WALL_Z;
-    openPose.tilt = 0;
+    openPose.y = 1.98;
+    openPose.z = WALL_Z + 0.1;
+    openPose.tilt = -0.42;
     closedPose.x = 0;
+    closedPose.y = 3.75;
     closedPose.z = WALL_Z;
     closedPose.tilt = 0;
-    tab.position.set(0.58, 0.9, tab.userData.restZ);
+    tab.position.set(0.62, 0.9 + WALL_LIFT, tab.userData.restZ);
     tab.rotation.set(0, 0, 0);
     applyScreenPose();
   }
@@ -648,7 +719,7 @@ export function createChallengeStand(targets) {
       emissiveIntensity: 0.15,
     }),
   );
-  newButton.position.set(0.22, 0.9, 0);
+  newButton.position.set(0.22, 0.9 + WALL_LIFT, 0);
   newButton.rotation.set(0, 0, 0);
   newButton.userData = { type: 'ui', action: 'challenge', restZ: 0, press: 0, baseScale: 1.22 };
   newButton.scale.setScalar(1.22);
@@ -657,11 +728,11 @@ export function createChallengeStand(targets) {
   targets.push(newButton);
 
   const puzzleSpecs = [
-    { id: 'dragon', label: 'DRAGON', fill: '#1d7a45', emissive: 0x1d7a45, x: -0.96, y: 0.9 },
-    { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: -0.96, y: 0.74 },
-    { id: 'mermaid', label: 'MERMAID', fill: '#2b6cb0', emissive: 0x2b6cb0, x: 0.98, y: 0.9 },
-    { id: 'horse', label: 'HORSE', fill: '#8a5a34', emissive: 0x8a5a34, x: 0.98, y: 0.74 },
-    { id: 'flower', label: 'FLOWER', fill: '#d4a017', emissive: 0xd4a017, x: -0.96, y: 0.58 },
+    { id: 'dragon', label: 'DRAGON', fill: '#1d7a45', emissive: 0x1d7a45, x: -0.96, y: 0.9 + WALL_LIFT },
+    { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: -0.96, y: 0.74 + WALL_LIFT },
+    { id: 'mermaid', label: 'MERMAID', fill: '#2b6cb0', emissive: 0x2b6cb0, x: 0.98, y: 0.9 + WALL_LIFT },
+    { id: 'horse', label: 'HORSE', fill: '#8a5a34', emissive: 0x8a5a34, x: 0.98, y: 0.74 + WALL_LIFT },
+    { id: 'flower', label: 'FLOWER', fill: '#d4a017', emissive: 0xd4a017, x: -0.96, y: 0.58 + WALL_LIFT },
   ];
   const puzzleButtons = puzzleSpecs.map((spec) => {
     const mesh = new THREE.Mesh(
@@ -703,42 +774,33 @@ export function createChallengeStand(targets) {
   signMesh.scale.setScalar(1);
   group.add(signMesh);
 
-  const nameButtons = [
-    { action: 'name-prev', label: '<', x: -1.16, y: 0.42 },
-    { action: 'name-add', label: 'ADD', x: -1.0, y: 0.42 },
-    { action: 'name-del', label: 'DEL', x: -0.84, y: 0.42 },
-    { action: 'name-next', label: '>', x: -1.16, y: 0.3 },
-    { action: 'name-ok', label: 'OK', x: -0.92, y: 0.3 },
-  ].map((spec) => {
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(0.14, 0.11, 0.04),
-      new THREE.MeshStandardMaterial({
-        map: buttonTexture(spec.label, '#1f7a45', '#f4fff7'),
-        roughness: 0.45,
-        emissive: 0x1f7a45,
-        emissiveIntensity: 0.16,
-      }),
-    );
-    mesh.position.set(spec.x, spec.y, 0);
-    mesh.userData = {
-      type: 'ui',
-      action: spec.action,
-      restZ: 0,
-      press: 0,
-      baseScale: 1,
-      homeX: spec.x,
-      homeY: spec.y,
-    };
-    mesh.visible = false;
-    mesh.castShadow = true;
-    group.add(mesh);
-    targets.push(mesh);
-    return mesh;
-  });
+  const deleteButton = new THREE.Mesh(
+    new THREE.BoxGeometry(0.36, 0.11, 0.05),
+    new THREE.MeshStandardMaterial({
+      map: buttonTexture('DELETE', '#a33b32', '#fff4f2'),
+      roughness: 0.45,
+      emissive: 0xa33b32,
+      emissiveIntensity: 0.22,
+    }),
+  );
+  deleteButton.position.set(-0.96, 0.42 + WALL_LIFT, 0);
+  deleteButton.userData = {
+    type: 'ui',
+    action: 'delete-build',
+    restZ: 0,
+    press: 0,
+    baseScale: 1,
+    homeX: -0.96,
+    homeY: 0.42 + WALL_LIFT,
+  };
+  deleteButton.visible = false;
+  deleteButton.castShadow = true;
+  group.add(deleteButton);
+  targets.push(deleteButton);
 
   const leaveButtons = [
-    { action: 'leave-yes', label: 'CLEAR', x: -1.08, y: 0.42 },
-    { action: 'leave-no', label: 'STAY', x: -0.76, y: 0.42 },
+    { action: 'leave-yes', label: 'CLEAR', x: -1.08, y: 0.42 + WALL_LIFT },
+    { action: 'leave-no', label: 'STAY', x: -0.76, y: 0.42 + WALL_LIFT },
   ].map((spec) => {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.11, 0.04),
@@ -775,8 +837,19 @@ export function createChallengeStand(targets) {
 
   let matched = false;
   let shown = 'ready';
+  let lastPaint = null;
+  const portraits = {};
+  for (const artist of ARTISTS) {
+    const img = new Image();
+    img.onload = () => {
+      portraits[artist.id] = img;
+      if (lastPaint) paintBoard(lastPaint);
+    };
+    img.src = `${import.meta.env.BASE_URL}avatars/${artist.file}`;
+  }
 
   function paintBoard(board) {
+    lastPaint = board;
     const { ctx, texture, canvas } = sign;
     const w = canvas.width;
     const h = canvas.height;
@@ -803,9 +876,25 @@ export function createChallengeStand(targets) {
       });
     } else {
       ctx.fillStyle = '#f7f1e4';
-      ctx.font = '700 58px Segoe UI, sans-serif';
+      ctx.font = '700 52px Segoe UI, sans-serif';
       (board.rows || []).forEach((row, index) => {
-        ctx.fillText(row, 40, 196 + index * 92);
+        const y = 196 + index * 92;
+        if (!row || typeof row === 'string') {
+          ctx.fillText(row || '', 40, y);
+          return;
+        }
+        const img = portraits[row.artistId];
+        if (img) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.arc(72, y, 30, 0, Math.PI * 2);
+          ctx.closePath();
+          ctx.clip();
+          ctx.drawImage(img, 42, y - 30, 60, 60);
+          ctx.restore();
+        }
+        const label = row.time ? `${row.place}  ${row.name}   ${row.time}` : `${row.place}  —`;
+        ctx.fillText(label, img ? 116 : 40, y);
       });
     }
     if (board.note) {
@@ -848,12 +937,12 @@ export function createChallengeStand(targets) {
     paintBoard({ title: headline, note: detail, match: verdict === 'match' });
   }
 
-  function setNaming(open) {
-    for (const button of nameButtons) button.visible = open;
-  }
-
   function setLeave(open) {
     for (const button of leaveButtons) button.visible = open;
+  }
+
+  function setDelete(open) {
+    deleteButton.visible = open;
   }
 
   function celebrate() {
@@ -906,7 +995,7 @@ export function createChallengeStand(targets) {
 
   paintBoard({ title: 'Match this', note: 'Any turn is fine' });
 
-  return { group, model, bricks, newButton, puzzleButtons, nameButtons, leaveButtons, sign: signMesh, setVerdict, setCaption, setBoard, setNaming, setLeave, celebrate, update };
+  return { group, model, bricks, newButton, puzzleButtons, leaveButtons, deleteButton, sign: signMesh, setVerdict, setCaption, setBoard, setLeave, setDelete, celebrate, update };
 }
 
 function createBin() {

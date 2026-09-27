@@ -37,42 +37,6 @@
         color: #ffe08a;
         line-height: 1;
       }
-      #score-entry {
-        position: fixed;
-        left: 50%;
-        bottom: 18px;
-        transform: translateX(-50%);
-        z-index: 4;
-        display: none;
-        gap: 8px;
-        align-items: center;
-        padding: 10px;
-        border-radius: 12px;
-        background: rgba(28, 36, 44, 0.92);
-        color: #f7f2ea;
-      }
-      #score-entry.show {
-        display: flex;
-      }
-      #score-entry input {
-        width: 9em;
-        font: inherit;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        padding: 8px 10px;
-        border: 0;
-        border-radius: 8px;
-      }
-      #score-entry button {
-        font: inherit;
-        font-weight: 750;
-        padding: 8px 12px;
-        border: 0;
-        border-radius: 8px;
-        background: #1f7a45;
-        color: #f4fff7;
-      }
       #hint {
         margin-top: 6px;
         font-size: 13px;
@@ -169,13 +133,8 @@
     <div id="hud">
       <div id="status">Pick a color and a shape, then press ORDER.</div>
       <div id="clock"></div>
-      <div id="hint">Squeeze the grip to pick up a brick from any side. It keeps the angle it had on the board. Hold the trigger and squeeze to lift a connected build, then turn your hand to set it down at a new angle. Let go of the grip to drop it. HIDE tucks the order screen into the back wall, and PARTS, next to NEW, brings it back. Match the build turning behind the table: colors and heights have to line up, any turn or mirror counts, and smaller bricks can fill in for a bigger one. Drop a piece in the TOSS bin on your left, or let go away from the table, to throw it away. The red X on a pedestal clears that part. The room code is for watching from a laptop. NEW makes a random build. Dragon, House, Mermaid, Horse, and Flower are timed puzzles, and a top 5 time can be saved with a name. R rotates. Hold Shift on desktop to lift a connected build.</div>
+      <div id="hint">Squeeze the grip to pick up a brick from any side. It keeps the angle it had on the board. Hold the trigger and squeeze to lift a connected build, then turn your hand to set it down at a new angle. Let go of the grip to drop it. HIDE tucks the order screen into the back wall, and PARTS, next to NEW, brings it back. Match the build turning behind the table: colors and heights have to line up, any turn or mirror counts, and smaller bricks can fill in for a bigger one. Drop a piece in the TOSS bin on your left, or let go away from the table, to throw it away. The red X on a pedestal clears that part. The room code is for watching from a laptop. NEW makes a random build. Dragon, House, Mermaid, Horse, and Flower are timed puzzles. A top 5 time picks one artist face, and each face keeps a single time. A finished build can only be looked at until you press DELETE. R rotates. Hold Shift on desktop to lift a connected build.</div>
     </div>
-    <form id="score-entry">
-      <label for="score-name">Top 5 name</label>
-      <input id="score-name" maxlength="8" autocomplete="off" spellcheck="false" />
-      <button type="submit">Save</button>
-    </form>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

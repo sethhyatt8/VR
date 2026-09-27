@@ -8,7 +8,8 @@ import { buildPuzzle } from './puzzles.js';
 import { colorById, GRID_X, GRID_Z, HEIGHT, heightById, LAYER, MAX_PEDESTALS, partLabel, PEG_MAX, PEG_MIN, shapeById, STUD, STUD_H } from './config.js';
 import { brickLocalPosition, canPlaceAssembly, columnTop, connectedBricks, createGrid, findAssemblySnap, findSnap, footprintOf, occupy, release, rotatePieceRecords } from './grid.js';
 import { hostRoomCode, openRoom, watchCodeFromUrl } from './watch.js';
-import { qualifies, openScores } from './scores.js';
+import { canClaim, openScores, wouldAccept } from './scores.js';
+import { findArtist } from './artists.js';
 import { createPedestal, createWorld, pedestalSlot } from './world.js';
 
 const statusEl = document.getElementById('status');
@@ -22,8 +23,6 @@ const watchForm = document.getElementById('watch-form');
 const watchInput = document.getElementById('watch-code');
 const watchNote = document.getElementById('watch-note');
 const clockEl = document.getElementById('clock');
-const scoreEntry = document.getElementById('score-entry');
-const scoreInput = document.getElementById('score-name');
 const watchParam = new URLSearchParams(location.search).get('watch');
 const watching = watchParam != null;
 const roomCode = watching ? watchCodeFromUrl() : hostRoomCode();
@@ -102,16 +101,14 @@ let puzzleStart = 0;
 let puzzleFrozen = null;
 let puzzleClock = '';
 let boards = { dragon: [], house: [], mermaid: [], horse: [], flower: [] };
-let naming = false;
+let picking = false;
+let buildLocked = false;
 let scoreSaved = false;
 let scoreMiss = '';
 let scoresSeen = false;
 let pendingLeave = null;
-let scoreName = '';
-let scoreLetter = 0;
 let scores = { submit() { return false; } };
 let scoresOnline = false;
-const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 let relay = null;
 let watcherCount = 0;
 let watchSendTimer = 0;
@@ -400,14 +397,11 @@ function scoreRows(id) {
   const rows = [];
   for (let i = 0; i < 5; i += 1) {
     const item = list[i];
-    rows.push(item ? `${i + 1}  ${item.name}   ${formatClock(item.ms)}` : `${i + 1}  —`);
+    rows.push(item
+      ? { place: i + 1, artistId: item.id, name: item.name, time: formatClock(item.ms) }
+      : { place: i + 1, artistId: '', name: '—', time: '' });
   }
   return rows;
-}
-
-function showScoreForm(open) {
-  scoreEntry.classList.toggle('show', open);
-  if (!open) scoreInput.value = '';
 }
 
 function paintChallengeSign() {
@@ -417,39 +411,35 @@ function paintChallengeSign() {
   }
   if (!puzzleName) {
     clockEl.textContent = '';
-    if (!naming) showScoreForm(false);
-    world.challenge.setNaming(false);
+    world.challenge.setPicking(false);
     world.challenge.setVerdict(shownVerdict);
     return;
   }
   puzzleClock = currentClock();
   clockEl.textContent = puzzleClock;
-  const prompt = naming
-    ? ['TOP 5', `NAME   ${scoreName || '—'}`, `LETTER   ${LETTERS[scoreLetter]}`]
-    : null;
+  const prompt = picking ? ['Pick who you are'] : null;
   world.challenge.setBoard({
-    title: naming ? 'Enter your name' : (shownVerdict === 'match' ? 'You got it' : puzzleName),
+    title: picking ? 'Top 5' : (shownVerdict === 'match' ? 'You got it' : puzzleName),
     clock: puzzleClock,
     rows: prompt ? [] : scoreRows(puzzleId),
     prompt,
-    note: naming ? 'Buttons under FLOWER' : (scoreMiss || (scoresOnline ? '' : 'Scores offline')),
-    match: shownVerdict === 'match' && !naming,
+    note: picking
+      ? 'Choose a face'
+      : (buildLocked ? 'Press DELETE to clear it' : (scoreMiss || (scoresOnline ? '' : 'Scores offline'))),
+    match: shownVerdict === 'match' && !picking,
   });
 }
 
-function clearNaming() {
-  naming = false;
+function clearScoreOffer() {
+  picking = false;
   scoreSaved = false;
   scoreMiss = '';
-  scoreName = '';
-  scoreLetter = 0;
-  world.challenge.setNaming(false);
-  showScoreForm(false);
+  world.challenge.setPicking(false);
 }
 
 function maybeOfferScore() {
-  if (watching || pendingLeave || !puzzleId || puzzleFrozen == null || naming || scoreSaved || shownVerdict !== 'match') return;
-  if (!qualifies(boards[puzzleId], puzzleFrozen)) {
+  if (watching || pendingLeave || !puzzleId || puzzleFrozen == null || picking || scoreSaved || shownVerdict !== 'match') return;
+  if (!canClaim(boards[puzzleId], puzzleFrozen)) {
     if (!scoresSeen) return;
     scoreMiss = 'Outside the top 5';
     scoreSaved = true;
@@ -457,52 +447,27 @@ function maybeOfferScore() {
     paintChallengeSign();
     return;
   }
-  naming = true;
-  scoreName = '';
-  scoreLetter = 0;
-  scoreMiss = '';
-  world.challenge.setNaming(true);
-  world.challenge.setLeave(false);
-  showScoreForm(true);
-  setStatus(`Top 5 on ${puzzleName}. Spell your name on the board, then press OK.`);
+  picking = true;
+  world.challenge.setPicking(true);
+  setStatus(`Top 5 on ${puzzleName}. Pick who you are.`);
   paintChallengeSign();
 }
 
-function shiftLetter(step) {
-  if (!naming) return;
-  scoreLetter = (scoreLetter + step + LETTERS.length) % LETTERS.length;
-  paintChallengeSign();
-}
-
-function addLetter() {
-  if (!naming || scoreName.length >= 8) return;
-  scoreName += LETTERS[scoreLetter];
-  scoreInput.value = scoreName;
-  paintChallengeSign();
-}
-
-function delLetter() {
-  if (!naming) return;
-  scoreName = scoreName.slice(0, -1);
-  scoreInput.value = scoreName;
-  paintChallengeSign();
-}
-
-function saveScoreName(raw) {
-  if (!naming || !puzzleId || puzzleFrozen == null) return;
-  const name = String(raw ?? scoreName).toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8);
-  if (!name) {
-    setStatus('Add at least one letter, then press OK.');
+function chooseArtist(artistId) {
+  if (!picking || !puzzleId || puzzleFrozen == null) return;
+  const artist = findArtist(artistId);
+  if (!artist) return;
+  if (!wouldAccept(boards[puzzleId], artist.id, puzzleFrozen)) {
+    setStatus(`${artist.name} already has a better time on ${puzzleName}. Pick someone else.`);
     return;
   }
-  const saved = scores.submit(puzzleId, name, puzzleFrozen);
-  naming = false;
+  const saved = scores.submit(puzzleId, artist.id, puzzleFrozen);
+  picking = false;
   scoreSaved = true;
-  world.challenge.setNaming(false);
-  showScoreForm(false);
+  world.challenge.setPicking(false);
   setStatus(saved
-    ? `${name} is on the ${puzzleName} board at ${formatClock(puzzleFrozen)}.`
-    : 'That name could not be saved.');
+    ? `${artist.name} is on the ${puzzleName} board at ${formatClock(puzzleFrozen)}.`
+    : 'That time could not be saved.');
   paintChallengeSign();
 }
 
@@ -519,16 +484,22 @@ function reviewBuild(speak) {
   const verdict = lookVerdict(cellsFromGrid(grid), challenge.cells);
   shownVerdict = verdict;
   if (verdict === 'match') {
+    buildLocked = true;
+    if (!pendingLeave) world.challenge.setDelete(true);
     if (!challengeMatched) {
       challengeMatched = true;
       if (puzzleName && puzzleFrozen == null) puzzleFrozen = performance.now() - puzzleStart;
       celebrateSolve();
-      setStatus(puzzleName ? `You got it in ${formatClock(puzzleFrozen)}.` : verdictStatus.match);
+      setStatus(puzzleName
+        ? `You got it in ${formatClock(puzzleFrozen)}. Look it over, then press DELETE.`
+        : 'You got it. Look it over, then press DELETE.');
     }
     paintChallengeSign();
     maybeOfferScore();
     return true;
   }
+  buildLocked = false;
+  world.challenge.setDelete(false);
   challengeMatched = false;
   paintChallengeSign();
   if (speak && verdict !== 'ready') setStatus(verdictStatus[verdict]);
@@ -539,6 +510,9 @@ function beginModel(model, status) {
   challenge = model;
   challengeMatched = false;
   shownVerdict = 'ready';
+  buildLocked = false;
+  world.challenge.setDelete(false);
+  world.challenge.setPicking(false);
   showExample(model);
   if (sameLook(cellsFromGrid(grid), model.cells)) {
     challengeMatched = true;
@@ -604,7 +578,8 @@ function leaveLabel(action) {
 }
 
 function showLeavePrompt() {
-  world.challenge.setNaming(false);
+  world.challenge.setPicking(false);
+  world.challenge.setDelete(false);
   world.challenge.setLeave(true);
   world.challenge.setBoard({
     title: 'Clear table?',
@@ -638,10 +613,11 @@ function confirmLeave() {
 function cancelLeave() {
   pendingLeave = null;
   world.challenge.setLeave(false);
-  if (naming) world.challenge.setNaming(true);
+  if (picking) world.challenge.setPicking(true);
+  if (buildLocked) world.challenge.setDelete(true);
   paintChallengeSign();
   maybeOfferScore();
-  if (!naming) setStatus('Staying with this build.');
+  if (!picking) setStatus('Staying with this build.');
 }
 
 function askLeave(action) {
@@ -676,7 +652,7 @@ function startChallenge(first) {
   puzzleId = '';
   puzzleFrozen = null;
   puzzleClock = '';
-  clearNaming();
+  clearScoreOffer();
   beginModel(model, first
     ? `${chosenLabel()} is selected. Match the build behind the table. Press NEW for another.`
     : 'New build behind the table. Match the colors and the heights.');
@@ -698,7 +674,7 @@ function startPuzzle(id) {
   puzzleStart = performance.now();
   puzzleFrozen = null;
   puzzleClock = '';
-  clearNaming();
+  clearScoreOffer();
   beginModel(model, `Build the ${model.name}. The time starts now.`);
 }
 
@@ -820,31 +796,56 @@ function toggleFlat() {
   showSelection();
 }
 
+function deleteBuild() {
+  if (watching || pendingLeave) return;
+  clearPlate();
+  buildLocked = false;
+  picking = false;
+  scoreSaved = false;
+  scoreMiss = '';
+  world.challenge.setDelete(false);
+  world.challenge.setPicking(false);
+  challengeMatched = false;
+  shownVerdict = 'ready';
+  puzzleFrozen = null;
+  if (puzzleName) puzzleStart = performance.now();
+  paintChallengeSign();
+  setStatus(puzzleName
+    ? `Cleared. Build the ${puzzleName} again. The time starts now.`
+    : 'Cleared. Match the build again.');
+}
+
 function activateUi(owner) {
   if (watching) return;
   if (owner.userData.restZ != null) owner.userData.press = 1;
-  if (owner.userData.action === 'color') selectColor(owner.userData.value);
-  else if (owner.userData.action === 'shape') selectShape(owner.userData.value);
-  else if (owner.userData.action === 'height') selectHeight(owner.userData.value);
-  else if (owner.userData.action === 'top') toggleFlat();
-  else if (owner.userData.action === 'order') orderSelection();
-  else if (owner.userData.action === 'challenge') askLeave({ kind: 'random', label: 'a random build' });
-  else if (owner.userData.action === 'puzzle') askLeave(puzzleAction(owner.userData.value));
-  else if (owner.userData.action === 'screen') {
+  const action = owner.userData.action;
+  if (buildLocked && ['color', 'shape', 'height', 'top', 'order', 'dismiss'].includes(action)) {
+    setStatus('This build is finished. Look it over, then press DELETE.');
+    return;
+  }
+  if (action === 'color') selectColor(owner.userData.value);
+  else if (action === 'shape') selectShape(owner.userData.value);
+  else if (action === 'height') selectHeight(owner.userData.value);
+  else if (action === 'top') toggleFlat();
+  else if (action === 'order') orderSelection();
+  else if (action === 'challenge') askLeave({ kind: 'random', label: 'a random build' });
+  else if (action === 'puzzle') askLeave(puzzleAction(owner.userData.value));
+  else if (action === 'screen') {
     const open = machine.toggleScreen();
     setStatus(open ? 'Order screen is down.' : 'Order screen is tucked away. Press PARTS to bring it back.');
   }
-  else if (owner.userData.action === 'dismiss') removePedestal(owner.userData.pedestalId);
-  else if (owner.userData.action === 'name-prev') shiftLetter(-1);
-  else if (owner.userData.action === 'name-next') shiftLetter(1);
-  else if (owner.userData.action === 'name-add') addLetter();
-  else if (owner.userData.action === 'name-del') delLetter();
-  else if (owner.userData.action === 'name-ok') saveScoreName();
-  else if (owner.userData.action === 'leave-yes') confirmLeave();
-  else if (owner.userData.action === 'leave-no') cancelLeave();
+  else if (action === 'dismiss') removePedestal(owner.userData.pedestalId);
+  else if (action === 'avatar') chooseArtist(owner.userData.value);
+  else if (action === 'delete-build') deleteBuild();
+  else if (action === 'leave-yes') confirmLeave();
+  else if (action === 'leave-no') cancelLeave();
 }
 
 function orderSelection() {
+  if (buildLocked) {
+    setStatus('This build is finished. Look it over, then press DELETE.');
+    return null;
+  }
   const existing = pedestals.find((pedestal) => (
     pedestal.colorId === selection.colorId
     && pedestal.shapeId === selection.shapeId
@@ -1087,6 +1088,10 @@ function captureHome(brick) {
 
 function grab(brick, holder, whole) {
   if (watching) return;
+  if (buildLocked) {
+    setStatus('This build is finished. Look it over, then press DELETE.');
+    return;
+  }
   const group = whole && brick.userData.role === 'placed' ? connectedBricks(grid, brick) : [brick];
   if (group.length > 1) grabAssembly(group, brick, holder);
   else grabOne(brick, holder);
@@ -1519,10 +1524,10 @@ function setPegScale(next) {
   world.challenge.model.scale.setScalar(pegScale);
   const far = -0.55 - (GRID_Z * STUD * pegScale + 0.16) / 2;
   world.challenge.group.position.set(0, 0, far - 0.4);
-  world.challenge.sign.position.set(-0.28, 0.64, -2.67);
+  world.challenge.sign.position.set(-0.28, 1.02, -2.67);
   world.challenge.sign.rotation.set(0, 0, 0);
   world.challenge.sign.scale.setScalar(1);
-  world.challenge.newButton.position.set(0.22, 0.9, -2.65);
+  world.challenge.newButton.position.set(0.22, 1.28, -2.65);
   world.challenge.newButton.rotation.set(0, 0, 0);
   world.challenge.newButton.userData.restZ = -2.65;
   world.challenge.newButton.scale.setScalar(world.challenge.newButton.userData.baseScale || 1.22);
@@ -1532,7 +1537,7 @@ function setPegScale(next) {
     button.userData.restZ = -2.65;
     button.scale.setScalar(button.userData.baseScale || 1.1);
   }
-  for (const button of [...world.challenge.nameButtons, ...world.challenge.leaveButtons]) {
+  for (const button of [...world.challenge.leaveButtons, world.challenge.deleteButton]) {
     button.position.set(button.userData.homeX, button.userData.homeY, -2.65);
     button.rotation.set(0, 0, 0);
     button.userData.restZ = -2.65;
@@ -1661,14 +1666,9 @@ function onKeyDown(event) {
     if (event.key === 'Enter' || event.key === 'y' || event.key === 'Y') { confirmLeave(); return; }
     if (event.key === 'Escape') { cancelLeave(); return; }
   }
-  if (naming && !pendingLeave) {
-    if (event.key === 'ArrowRight') { shiftLetter(1); return; }
-    if (event.key === 'ArrowLeft') { shiftLetter(-1); return; }
-    if (event.key === 'Enter') { addLetter(); return; }
-    if (event.key === 'Backspace') { delLetter(); return; }
-    if (event.key === 's' || event.key === 'S') { saveScoreName(); return; }
-    const leaving = event.key === 'n' || event.key === 'N' || '12345'.includes(event.key);
-    if (!leaving) return;
+  if (buildLocked && (event.key === 'Delete' || event.key === 'd' || event.key === 'D')) {
+    deleteBuild();
+    return;
   }
   if (event.key === 'r' || event.key === 'R') rotateHeld();
   if (event.key === 'Enter') orderSelection();
@@ -2039,17 +2039,6 @@ function frame() {
   renderer.render(scene, camera);
 }
 
-scoreEntry.addEventListener('submit', (event) => {
-  event.preventDefault();
-  saveScoreName(scoreInput.value);
-});
-scoreInput.addEventListener('input', () => {
-  if (!naming) return;
-  scoreName = scoreInput.value.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 8);
-  if (scoreInput.value !== scoreName) scoreInput.value = scoreName;
-  paintChallengeSign();
-});
-
 scores = openScores((next, status) => {
   boards = next;
   if (status === 'offline') {
@@ -2059,12 +2048,11 @@ scores = openScores((next, status) => {
     scoresOnline = true;
     scoresSeen = true;
   } else if (status === 'ready') scoresOnline = true;
-  if (naming && puzzleId && puzzleFrozen != null && !qualifies(next[puzzleId], puzzleFrozen)) {
-    naming = false;
+  if (picking && puzzleId && puzzleFrozen != null && !canClaim(next[puzzleId], puzzleFrozen)) {
+    picking = false;
     scoreSaved = true;
     scoreMiss = 'Outside the top 5';
-    world.challenge.setNaming(false);
-    showScoreForm(false);
+    world.challenge.setPicking(false);
     setStatus('That time just missed the top 5.');
   } else maybeOfferScore();
   if (puzzleName || pendingLeave) paintChallengeSign();
