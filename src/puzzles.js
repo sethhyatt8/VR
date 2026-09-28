@@ -236,10 +236,35 @@ function peacock() {
     [18, 6, 10],
     [19, 7, 9],
   ];
-  const columnTop = Array(16).fill(0);
+  const present = new Set();
   for (const [y, x0, x1] of rows) {
-    for (let x = x0; x < x1; x += 1) columnTop[x] = y;
+    for (let x = x0; x < x1; x += 1) present.add(`${x},${y}`);
   }
+  const pairColor = ['green', 'lime', 'pink', 'orange', 'orange', 'pink', 'lime', 'green'];
+  const paint = new Map();
+  for (const key of present) {
+    const [x] = key.split(',').map(Number);
+    paint.set(key, pairColor[Math.floor(x / 2)]);
+  }
+  const put = (x, y, color) => {
+    if (present.has(`${x},${y}`)) paint.set(`${x},${y}`, color);
+    const mirror = 15 - x;
+    if (present.has(`${mirror},${y}`)) paint.set(`${mirror},${y}`, color);
+  };
+  const paintPair = (pair, y, color) => {
+    put(pair * 2, y, color);
+    put(pair * 2 + 1, y, color);
+  };
+  const eye = (pair, cy, core, ring) => {
+    paintPair(pair, cy - 1, ring);
+    paintPair(pair, cy + 1, ring);
+    paintPair(pair - 1, cy, ring);
+    paintPair(pair + 1, cy, ring);
+    paintPair(pair, cy, core);
+  };
+  eye(1, 8, 'yellow', 'purple');
+  eye(2, 12, 'yellow', 'blue');
+  eye(3, 17, 'yellow', 'red');
   const bricks = [];
   bricks.push(
     piece('2x3', 'green', 7, 3, 0),
@@ -263,23 +288,48 @@ function peacock() {
     piece('1x2', 'yellow', 7, 9, 6, 1),
     piece('1x2', 'lime', 7, 8, 7, 1),
   );
+  let support = [7, 9];
+  const shapes = { 1: '1x1', 2: '1x2', 3: '1x3', 4: '1x4' };
   for (const [y, x0, x1] of rows) {
+    const used = new Set();
+    const add = (x, span) => {
+      const color = paint.get(`${x},${y}`);
+      for (let i = 0; i < span; i += 1) paint.set(`${x + i},${y}`, color);
+      bricks.push(piece(shapes[span], color, x, 6, y, span === 1 ? 0 : 1));
+      for (let i = 0; i < span; i += 1) used.add(x + i);
+    };
+    if (x0 < support[0]) {
+      const span = support[0] - x0 + 1;
+      const color = paint.get(`${x0},${y}`);
+      for (let i = 0; i < span; i += 1) paint.set(`${x0 + i},${y}`, color);
+      add(x0, span);
+    }
+    if (x1 > support[1]) {
+      const span = x1 - (support[1] - 1);
+      const start = x1 - span;
+      const color = paint.get(`${x1 - 1},${y}`);
+      for (let i = 0; i < span; i += 1) paint.set(`${start + i},${y}`, color);
+      add(start, span);
+    }
     let cursor = x0;
     while (cursor < x1) {
-      const remain = x1 - cursor;
-      const span = remain >= 4 ? 4 : remain >= 2 ? 2 : 1;
-      const id = span === 4 ? '1x4' : span === 2 ? '1x2' : '1x1';
-      const mid = cursor + Math.floor((span - 1) / 2);
-      const belowTop = columnTop[mid] - y;
-      const ring = mid < 8 ? 'blue' : 'purple';
-      let color = mid % 4 < 2 ? 'green' : 'lime';
-      if (belowTop === 0) color = 'yellow';
-      else if (belowTop === 1) color = ring;
-      else if (belowTop === 4 && columnTop[mid] >= 10) color = 'yellow';
-      else if ((belowTop === 3 || belowTop === 5) && columnTop[mid] >= 10) color = ring;
-      bricks.push(piece(id, color, cursor, 6, y, span === 1 ? 0 : 1));
-      cursor += span;
+      if (used.has(cursor)) {
+        cursor += 1;
+        continue;
+      }
+      const color = paint.get(`${cursor},${y}`);
+      let span = 1;
+      while (
+        span < 4
+        && cursor + span < x1
+        && !used.has(cursor + span)
+        && paint.get(`${cursor + span},${y}`) === color
+      ) span += 1;
+      const use = span >= 4 ? 4 : span === 3 ? 2 : span;
+      add(cursor, use);
+      cursor += use;
     }
+    support = [x0, x1];
   }
   return bricks;
 }
