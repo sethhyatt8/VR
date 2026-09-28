@@ -461,12 +461,15 @@ function chooseArtist(artistId) {
     setStatus(`${artist.name} already has a better time on ${puzzleName}. Pick someone else.`);
     return;
   }
+  const previous = (boards[puzzleId] || []).find((item) => item.id === artist.id);
   const saved = scores.submit(puzzleId, artist.id, puzzleFrozen);
   picking = false;
   scoreSaved = true;
   world.challenge.setPicking(false);
   setStatus(saved
-    ? `${artist.name} is on the ${puzzleName} board at ${formatClock(puzzleFrozen)}.`
+    ? (previous
+      ? `${artist.name}'s ${puzzleName} time is now ${formatClock(puzzleFrozen)}.`
+      : `${artist.name} is on the ${puzzleName} board at ${formatClock(puzzleFrozen)}.`)
     : 'That time could not be saved.');
   paintChallengeSign();
 }

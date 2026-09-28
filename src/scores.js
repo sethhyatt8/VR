@@ -9,10 +9,17 @@ export function emptyBoards() {
   return Object.fromEntries(PUZZLES.map((id) => [id, []]));
 }
 
+function resolveArtist(item) {
+  const artist = findArtist(item?.id);
+  if (artist) return artist;
+  const name = String(item?.name || item?.id || '').trim().toLowerCase();
+  return ARTISTS.find((person) => person.id === name || person.name.toLowerCase() === name) || null;
+}
+
 function cleanList(list) {
   const best = new Map();
   for (const item of Array.isArray(list) ? list : []) {
-    const artist = findArtist(item?.id);
+    const artist = resolveArtist(item);
     const ms = Number(item?.ms);
     const at = Number(item?.at) || 0;
     if (!artist || !Number.isFinite(ms) || ms < 0 || ms >= 1000 * 60 * 60) continue;
@@ -21,6 +28,11 @@ function cleanList(list) {
     if (!prev || entry.ms < prev.ms || (entry.ms === prev.ms && entry.at > prev.at)) best.set(artist.id, entry);
   }
   return [...best.values()].sort((a, b) => a.ms - b.ms || b.at - a.at).slice(0, 5);
+}
+
+function listIsClean(raw, cleaned) {
+  if (!Array.isArray(raw) || raw.length !== cleaned.length) return false;
+  return cleaned.every((item, index) => raw[index]?.id === item.id && Number(raw[index]?.ms) === item.ms);
 }
 
 function sanitize(data) {
@@ -75,18 +87,27 @@ export function openScores(onBoards) {
   client.on('offline', () => onBoards(boards, 'offline'));
   client.on('message', (topic, payload) => {
     if (topic !== TOPIC) return;
+    let parsed = null;
     try {
-      boards = sanitize(JSON.parse(payload.toString()));
+      parsed = JSON.parse(payload.toString());
+      boards = sanitize(parsed);
     } catch {
       return;
     }
     if (pending && !sameEntry(boards[pending.puzzleId], pending)) publish(pending);
-    else pending = null;
+    else {
+      pending = null;
+      if (PUZZLES.some((id) => !listIsClean(parsed?.[id], boards[id]))) publishBoards(boards);
+    }
     onBoards(boards, 'message');
   });
 
   function publish(entry) {
     const next = { ...boards, [entry.puzzleId]: insertScore(boards[entry.puzzleId], entry) };
+    publishBoards(next);
+  }
+
+  function publishBoards(next) {
     if (!client?.connected) return;
     client.publish(TOPIC, JSON.stringify(next), { qos: 1, retain: true });
   }
