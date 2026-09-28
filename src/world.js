@@ -731,11 +731,12 @@ export function createChallengeStand(targets) {
 
   const puzzleX = -1.9;
   const puzzleSpecs = [
-    { id: 'dragon', label: 'DRAGON', fill: '#1d7a45', emissive: 0x1d7a45, x: puzzleX, y: 1.34 },
-    { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: puzzleX, y: 1.18 },
-    { id: 'mermaid', label: 'MERMAID', fill: '#2b6cb0', emissive: 0x2b6cb0, x: puzzleX, y: 1.02 },
-    { id: 'horse', label: 'HORSE', fill: '#8a5a34', emissive: 0x8a5a34, x: puzzleX, y: 0.86 },
-    { id: 'flower', label: 'FLOWER', fill: '#d4a017', emissive: 0xd4a017, x: puzzleX, y: 0.70 },
+    { id: 'dragon', label: 'DRAGON', fill: '#1d7a45', emissive: 0x1d7a45, x: puzzleX, y: 1.36 },
+    { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: puzzleX, y: 1.22 },
+    { id: 'mermaid', label: 'MERMAID', fill: '#2b6cb0', emissive: 0x2b6cb0, x: puzzleX, y: 1.08 },
+    { id: 'horse', label: 'HORSE', fill: '#8a5a34', emissive: 0x8a5a34, x: puzzleX, y: 0.94 },
+    { id: 'flower', label: 'FLOWER', fill: '#d4a017', emissive: 0xd4a017, x: puzzleX, y: 0.80 },
+    { id: 'peacock', label: 'PEACOCK', fill: '#128a72', emissive: 0x128a72, x: puzzleX, y: 0.66 },
   ];
   const puzzleButtons = puzzleSpecs.map((spec) => {
     const mesh = new THREE.Mesh(
@@ -786,7 +787,7 @@ export function createChallengeStand(targets) {
       emissiveIntensity: 0.22,
     }),
   );
-  deleteButton.position.set(puzzleX, 0.54, 0);
+  deleteButton.position.set(puzzleX, 0.48, 0);
   deleteButton.userData = {
     type: 'ui',
     action: 'delete-build',
@@ -794,7 +795,7 @@ export function createChallengeStand(targets) {
     press: 0,
     baseScale: 1,
     homeX: puzzleX,
-    homeY: 0.54,
+    homeY: 0.48,
   };
   deleteButton.visible = false;
   deleteButton.castShadow = true;
@@ -802,8 +803,8 @@ export function createChallengeStand(targets) {
   targets.push(deleteButton);
 
   const leaveButtons = [
-    { action: 'leave-yes', label: 'CLEAR', x: puzzleX - 0.16, y: 0.54 },
-    { action: 'leave-no', label: 'STAY', x: puzzleX + 0.16, y: 0.54 },
+    { action: 'leave-yes', label: 'CLEAR', x: puzzleX - 0.16, y: 0.48 },
+    { action: 'leave-no', label: 'STAY', x: puzzleX + 0.16, y: 0.48 },
   ].map((spec) => {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(0.28, 0.11, 0.04),

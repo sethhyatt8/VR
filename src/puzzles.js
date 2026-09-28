@@ -216,6 +216,50 @@ function mermaid() {
   ];
 }
 
+function peacock() {
+  const feathers = [
+    [1, 2, 3, 'lime', 'blue'],
+    [3, 1, 4, 'green', 'blue'],
+    [5, 0, 6, 'green', 'purple'],
+    [7, 0, 8, 'blue', 'green'],
+    [9, 0, 6, 'green', 'purple'],
+    [11, 1, 4, 'green', 'blue'],
+    [13, 2, 3, 'lime', 'blue'],
+  ];
+  const bricks = [];
+  for (const [x, z, height, shaft, ring] of feathers) {
+    for (let y = 0; y < height; y += 1) {
+      let color = shaft;
+      if (y === height - 1) color = 'yellow';
+      else if (y === height - 2) color = ring;
+      bricks.push(piece('1x2', color, x, z, y, 1));
+    }
+  }
+  bricks.push(
+    piece('2x3', 'green', 7, 3, 0),
+    piece('2x2', 'green', 7, 4, 1),
+    piece('1x2', 'lime', 5, 6, 0),
+    piece('1x2', 'lime', 10, 6, 0),
+    piece('2x4', 'blue', 6, 6, 0, 1),
+    piece('1x2', 'black', 6, 8, 0, 1),
+    piece('1x2', 'black', 8, 8, 0, 1),
+    piece('1x1', 'orange', 7, 9, 0),
+    piece('1x1', 'orange', 8, 9, 0),
+    piece('1x2', 'lime', 5, 6, 1),
+    piece('2x4', 'blue', 6, 6, 1, 1),
+    piece('1x2', 'lime', 10, 6, 1),
+    piece('2x2', 'lime', 7, 6, 2),
+    piece('1x2', 'blue', 7, 7, 3, 1),
+    piece('1x2', 'blue', 7, 7, 4, 1),
+    piece('2x3', 'blue', 7, 7, 5),
+    piece('1x1', 'black', 7, 8, 6),
+    piece('1x1', 'black', 8, 8, 6),
+    piece('1x2', 'yellow', 7, 9, 6, 1),
+    piece('1x2', 'lime', 7, 8, 7, 1),
+  );
+  return bricks;
+}
+
 function horse() {
   return [
     piece('1x2', 'black', 2, 2, 0),
@@ -257,6 +301,7 @@ const PUZZLES = [
   { id: 'mermaid', name: 'Mermaid', bricks: mermaid },
   { id: 'horse', name: 'Horse', bricks: horse },
   { id: 'flower', name: 'Flower', bricks: flower },
+  { id: 'peacock', name: 'Peacock', bricks: peacock },
 ];
 
 function specBrick(entry) {

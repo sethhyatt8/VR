@@ -100,7 +100,7 @@ let puzzleId = '';
 let puzzleStart = 0;
 let puzzleFrozen = null;
 let puzzleClock = '';
-let boards = { dragon: [], house: [], mermaid: [], horse: [], flower: [] };
+let boards = { dragon: [], house: [], mermaid: [], horse: [], flower: [], peacock: [] };
 let picking = false;
 let buildLocked = false;
 let scoreSaved = false;
@@ -638,7 +638,7 @@ function askLeave(action) {
 }
 
 function puzzleAction(id) {
-  const names = { dragon: 'Dragon', house: 'House', mermaid: 'Mermaid', horse: 'Horse', flower: 'Flower' };
+  const names = { dragon: 'Dragon', house: 'House', mermaid: 'Mermaid', horse: 'Horse', flower: 'Flower', peacock: 'Peacock' };
   return { kind: 'puzzle', id, label: names[id] || id };
 }
 
@@ -1679,6 +1679,7 @@ function onKeyDown(event) {
   if (event.key === '3') askLeave(puzzleAction('mermaid'));
   if (event.key === '4') askLeave(puzzleAction('horse'));
   if (event.key === '5') askLeave(puzzleAction('flower'));
+  if (event.key === '6') askLeave(puzzleAction('peacock'));
 }
 
 function onXrTrigger(controller) {
