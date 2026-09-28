@@ -217,24 +217,30 @@ function mermaid() {
 }
 
 function peacock() {
-  const feathers = [
-    [1, 2, 3, 'lime', 'blue'],
-    [3, 1, 4, 'green', 'blue'],
-    [5, 0, 6, 'green', 'purple'],
-    [7, 0, 8, 'blue', 'green'],
-    [9, 0, 6, 'green', 'purple'],
-    [11, 1, 4, 'green', 'blue'],
-    [13, 2, 3, 'lime', 'blue'],
+  const rows = [
+    [3, 6, 10],
+    [4, 4, 12],
+    [5, 2, 14],
+    [6, 0, 16],
+    [7, 0, 16],
+    [8, 0, 16],
+    [9, 0, 16],
+    [10, 0, 16],
+    [11, 0, 16],
+    [12, 0, 16],
+    [13, 0, 16],
+    [14, 0, 16],
+    [15, 1, 15],
+    [16, 2, 14],
+    [17, 4, 12],
+    [18, 6, 10],
+    [19, 7, 9],
   ];
-  const bricks = [];
-  for (const [x, z, height, shaft, ring] of feathers) {
-    for (let y = 0; y < height; y += 1) {
-      let color = shaft;
-      if (y === height - 1) color = 'yellow';
-      else if (y === height - 2) color = ring;
-      bricks.push(piece('1x2', color, x, z, y, 1));
-    }
+  const columnTop = Array(16).fill(0);
+  for (const [y, x0, x1] of rows) {
+    for (let x = x0; x < x1; x += 1) columnTop[x] = y;
   }
+  const bricks = [];
   bricks.push(
     piece('2x3', 'green', 7, 3, 0),
     piece('2x2', 'green', 7, 4, 1),
@@ -257,6 +263,24 @@ function peacock() {
     piece('1x2', 'yellow', 7, 9, 6, 1),
     piece('1x2', 'lime', 7, 8, 7, 1),
   );
+  for (const [y, x0, x1] of rows) {
+    let cursor = x0;
+    while (cursor < x1) {
+      const remain = x1 - cursor;
+      const span = remain >= 4 ? 4 : remain >= 2 ? 2 : 1;
+      const id = span === 4 ? '1x4' : span === 2 ? '1x2' : '1x1';
+      const mid = cursor + Math.floor((span - 1) / 2);
+      const belowTop = columnTop[mid] - y;
+      const ring = mid < 8 ? 'blue' : 'purple';
+      let color = mid % 4 < 2 ? 'green' : 'lime';
+      if (belowTop === 0) color = 'yellow';
+      else if (belowTop === 1) color = ring;
+      else if (belowTop === 4 && columnTop[mid] >= 10) color = 'yellow';
+      else if ((belowTop === 3 || belowTop === 5) && columnTop[mid] >= 10) color = ring;
+      bricks.push(piece(id, color, cursor, 6, y, span === 1 ? 0 : 1));
+      cursor += span;
+    }
+  }
   return bricks;
 }
 
