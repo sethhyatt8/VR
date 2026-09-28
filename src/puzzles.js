@@ -319,6 +319,38 @@ function horse() {
   ];
 }
 
+function car() {
+  return [
+    piece('2x2', 'black', 2, 2, 0),
+    piece('2x2', 'black', 2, 6, 0),
+    piece('2x2', 'black', 8, 2, 0),
+    piece('2x2', 'black', 8, 6, 0),
+    piece('2x4', 'red', 1, 3, 1, 1),
+    piece('2x4', 'red', 1, 5, 1, 1),
+    piece('2x4', 'red', 5, 3, 1, 1),
+    piece('2x4', 'red', 5, 5, 1, 1),
+    piece('2x2', 'red', 9, 3, 1),
+    piece('2x2', 'red', 9, 5, 1),
+    piece('1x1', 'orange', 1, 3, 2),
+    piece('1x1', 'orange', 1, 6, 2),
+    piece('2x2', 'red', 2, 3, 2),
+    piece('2x2', 'red', 2, 5, 2),
+    piece('2x4', 'red', 4, 3, 2, 1),
+    piece('2x4', 'red', 4, 5, 2, 1),
+    piece('2x2', 'red', 8, 3, 2),
+    piece('2x2', 'red', 8, 5, 2),
+    piece('1x1', 'yellow', 10, 3, 2),
+    piece('1x1', 'yellow', 10, 6, 2),
+    piece('1x2', 'black', 10, 4, 2),
+    piece('2x2', 'blue', 4, 3, 3),
+    piece('2x2', 'blue', 4, 5, 3),
+    piece('2x2', 'white', 6, 3, 3),
+    piece('2x2', 'white', 6, 5, 3),
+    piece('2x4', 'red', 4, 3, 4, 1),
+    piece('2x4', 'red', 4, 5, 4, 1),
+  ];
+}
+
 const PUZZLES = [
   { id: 'dragon', name: 'Dragon', bricks: dragon },
   { id: 'house', name: 'House', bricks: house },
@@ -326,6 +358,7 @@ const PUZZLES = [
   { id: 'horse', name: 'Horse', bricks: horse },
   { id: 'flower', name: 'Flower', bricks: flower },
   { id: 'peacock', name: 'Peacock', bricks: peacock },
+  { id: 'car', name: 'Car', bricks: car },
 ];
 
 function specBrick(entry) {

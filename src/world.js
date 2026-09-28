@@ -731,12 +731,13 @@ export function createChallengeStand(targets) {
 
   const puzzleX = -1.9;
   const puzzleSpecs = [
-    { id: 'dragon', label: 'DRAGON', fill: '#1d7a45', emissive: 0x1d7a45, x: puzzleX, y: 1.36 },
-    { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: puzzleX, y: 1.22 },
-    { id: 'mermaid', label: 'MERMAID', fill: '#2b6cb0', emissive: 0x2b6cb0, x: puzzleX, y: 1.08 },
-    { id: 'horse', label: 'HORSE', fill: '#8a5a34', emissive: 0x8a5a34, x: puzzleX, y: 0.94 },
-    { id: 'flower', label: 'FLOWER', fill: '#d4a017', emissive: 0xd4a017, x: puzzleX, y: 0.80 },
-    { id: 'peacock', label: 'PEACOCK', fill: '#128a72', emissive: 0x128a72, x: puzzleX, y: 0.66 },
+    { id: 'dragon', label: 'DRAGON', fill: '#1d7a45', emissive: 0x1d7a45, x: puzzleX, y: 1.38 },
+    { id: 'house', label: 'HOUSE', fill: '#a33b32', emissive: 0xa33b32, x: puzzleX, y: 1.26 },
+    { id: 'mermaid', label: 'MERMAID', fill: '#2b6cb0', emissive: 0x2b6cb0, x: puzzleX, y: 1.14 },
+    { id: 'horse', label: 'HORSE', fill: '#8a5a34', emissive: 0x8a5a34, x: puzzleX, y: 1.02 },
+    { id: 'flower', label: 'FLOWER', fill: '#d4a017', emissive: 0xd4a017, x: puzzleX, y: 0.90 },
+    { id: 'peacock', label: 'PEACOCK', fill: '#128a72', emissive: 0x128a72, x: puzzleX, y: 0.78 },
+    { id: 'car', label: 'CAR', fill: '#c0392b', emissive: 0xc0392b, x: puzzleX, y: 0.66 },
   ];
   const puzzleButtons = puzzleSpecs.map((spec) => {
     const mesh = new THREE.Mesh(

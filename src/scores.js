@@ -3,7 +3,7 @@ import { ARTISTS, findArtist } from './artists.js';
 
 const BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 const TOPIC = 'sethhyatt8/brick-room/scores';
-const PUZZLES = ['dragon', 'house', 'mermaid', 'horse', 'flower', 'peacock'];
+const PUZZLES = ['dragon', 'house', 'mermaid', 'horse', 'flower', 'peacock', 'car'];
 
 export function emptyBoards() {
   return Object.fromEntries(PUZZLES.map((id) => [id, []]));
